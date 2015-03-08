@@ -1,0 +1,11 @@
+This homework will work like less with some features.
+
+Will call as;
+Less "fileName" lineNumber
+
+Key map;
+q will quit
+Enter will bring next line and will remove top line from terminal
+ESC will remove all lines at screen and bring lines as much as line number argument
+up arrow will remove last line and bring one line which is the line one before top line
+down arrow will remove top line and bring next line
