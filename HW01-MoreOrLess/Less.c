@@ -1,4 +1,9 @@
+/**
+* This code written by Kasım Süzen at 08 March 2015
+* This is a less like program which is wrote for CSE 244's first homework 
+*/
 #include <stdio.h>
+#include <stdlib.h>
 #include <termios.h>
 
 static struct termios old, new;
@@ -6,10 +11,13 @@ char getch(void);
 void initTermios(int echo);
 char getch_(int echo);
 void resetTermios(void);
+void usageError();
+void lineRewind(int lineCount);
 
-int main ()
+int main (int argc,char **argv)
 {
-
+	if(argc != 3)
+		usageError();
 	return 0;
 }
 
@@ -43,4 +51,21 @@ char getch_(int echo)
 char getch(void) 
 {
 	return getch_(0);
+}
+
+void usageError(){
+	printf("\nParameter Error this program should run as:\n");
+	printf("Less \"fileName\" lineNumber \n");
+	exit(-1);
+}
+
+/* Rewind stdout - terminal output - as much as lineCount */
+void lineRewind(int lineCount){
+	int i;
+	
+	for(i=0; i < lineCount; ++i)
+		fputs("\033[A\033[2K",stdout);
+	
+	rewind(stdout); /* will rewind stdout to the very beginning */
+	ftruncate(1,0); /* will truncate stdout fully*/
 }
