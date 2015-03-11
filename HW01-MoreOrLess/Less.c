@@ -24,12 +24,17 @@ int fileRead(char *fileName,char *fileContent);
 int main (int argc,char **argv){
 	if(argc != 3)
 		usageError();
+
+	moreOrLess(argv[1],atoi(argv[2]));
+
 	return 0;
 }
 
 /* This function call print, lineRewind, fileRead function when need and decide when which is needed */
 int moreOrLess(char *fileName,int numberOfLine){
+	char *fileContent;
 
+	fileRead(fileName,fileContent);
 }
 
 /* print lines betweem start and stop line number */
@@ -40,6 +45,31 @@ void print(char *material,int start,int stop){
 /* Read file which taken by first argument -fileName- and write contents to fileContent character array*/
 int fileRead(char *fileName,char *fileContent){
 
+	int sizeOfFile,i=0;
+	FILE * input;
+
+	input = fopen(fileName,"r");
+
+	if(input == NULL){
+		fprintf(stderr,"There is no file as %s\n",fileName);
+		exit(-1);
+	}
+
+	fseek(input, 0, 2);    /* file pointer at the end of file */
+    sizeOfFile = ftell(input);
+
+    freopen(fileName,"r",input);
+
+    fileContent=(char*)malloc(sizeOfFile*sizeof(char)+1);
+
+    while(!feof(input)){
+    	fscanf(input,"%c",&fileContent[i]);
+    	++i;
+    }
+
+    fileContent[i]='\0';
+
+    return 0;
 }
 
 /* Initialize new terminal i/o settings */
