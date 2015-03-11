@@ -15,6 +15,7 @@ void initTermios(int echo);
 char getch_(int echo);
 void resetTermios(void);
 void usageError();
+int moreOrLess(char *fileName,int numberOfLine);
 void lineRewind(int lineCount);
 void print(char *material,int start,int stop);
 int fileRead(char *fileName,char *fileContent);
@@ -24,6 +25,11 @@ int main (int argc,char **argv){
 	if(argc != 3)
 		usageError();
 	return 0;
+}
+
+/* This function call print, lineRewind, fileRead function when need and decide when which is needed */
+int moreOrLess(char *fileName,int numberOfLine){
+
 }
 
 /* print lines betweem start and stop line number */
