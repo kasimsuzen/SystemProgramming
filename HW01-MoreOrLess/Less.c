@@ -18,7 +18,7 @@ void usageError();
 int moreOrLess(char *fileName,int numberOfLine);
 void lineRewind(int lineCount);
 void print(char *material,int start,int stop);
-int fileRead(char *fileName,char *fileContent);
+char* fileRead(char *fileName,char *fileContent);
 
 
 int main (int argc,char **argv){
@@ -34,16 +34,35 @@ int main (int argc,char **argv){
 int moreOrLess(char *fileName,int numberOfLine){
 	char *fileContent;
 
-	fileRead(fileName,fileContent);
+	fileContent=fileRead(fileName,fileContent);
+
+	printf("moreOrLess function\n");
+
+	print(fileContent,2,5);
+
+	free(fileContent);
 }
 
-/* print lines betweem start and stop line number */
+/* print lines between start and stop line number */
 void print(char *material,int start,int stop){
-	
+	int i,position=0;
+
+	for(i=0;position < start;++i){
+		if(material[i] == '\n')
+			++position;
+	}
+
+	for (;position < stop; ++i)
+	{
+		printf("%c",material[i]);
+		if(material[i] == '\n')
+			++position;
+	}
+
 }
 
 /* Read file which taken by first argument -fileName- and write contents to fileContent character array*/
-int fileRead(char *fileName,char *fileContent){
+char* fileRead(char *fileName,char *fileContent){
 
 	int sizeOfFile,i=0;
 	FILE * input;
@@ -69,7 +88,7 @@ int fileRead(char *fileName,char *fileContent){
 
     fileContent[i]='\0';
 
-    return 0;
+    return fileContent;
 }
 
 /* Initialize new terminal i/o settings */
