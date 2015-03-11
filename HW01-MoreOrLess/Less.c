@@ -5,6 +5,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <termios.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <string.h>
 
 static struct termios old, new;
 char getch(void);
@@ -13,17 +16,20 @@ char getch_(int echo);
 void resetTermios(void);
 void usageError();
 void lineRewind(int lineCount);
+void print(char *material,int start,int stop);
 
-int main (int argc,char **argv)
-{
+int main (int argc,char **argv){
 	if(argc != 3)
 		usageError();
 	return 0;
 }
 
+void print(char *material,int start,int stop){
+	
+}
+
 /* Initialize new terminal i/o settings */
-void initTermios(int echo) 
-{
+void initTermios(int echo){
 	tcgetattr(0, &old); /* grab old terminal i/o settings */
 	new = old; /* make new settings same as old settings */
 	new.c_lflag &= ~ICANON; /* disable buffered i/o */
@@ -32,14 +38,12 @@ void initTermios(int echo)
 }
 
 /* Restore old terminal i/o settings */
-void resetTermios(void) 
-{
+void resetTermios(void){
 	tcsetattr(0, TCSANOW, &old);
 }
 
 /* Read 1 character - echo defines echo mode */
-char getch_(int echo)
-{
+char getch_(int echo){
 	char ch;
 	initTermios(echo);
 	ch = getchar();
@@ -48,8 +52,7 @@ char getch_(int echo)
 }
 
 /* Read 1 character without echo */
-char getch(void) 
-{
+char getch(void){
 	return getch_(0);
 }
 
