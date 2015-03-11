@@ -17,6 +17,8 @@ void resetTermios(void);
 void usageError();
 void lineRewind(int lineCount);
 void print(char *material,int start,int stop);
+int fileRead(char *fileName,char *fileContent);
+
 
 int main (int argc,char **argv){
 	if(argc != 3)
@@ -24,8 +26,14 @@ int main (int argc,char **argv){
 	return 0;
 }
 
+/* print lines betweem start and stop line number */
 void print(char *material,int start,int stop){
 	
+}
+
+/* Read file which taken by first argument -fileName- and write contents to fileContent character array*/
+int fileRead(char *fileName,char *fileContent){
+
 }
 
 /* Initialize new terminal i/o settings */
