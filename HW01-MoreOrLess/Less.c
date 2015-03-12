@@ -7,6 +7,7 @@
 #include <termios.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <sys/ioctl.h>
 #include <string.h>
 
 static struct termios old, new;
@@ -19,7 +20,7 @@ int moreOrLess(char *fileName,int numberOfLine);
 void lineRewind(int lineCount);
 void print(char *material,int start,int stop);
 char* fileRead(char *fileName,char *fileContent);
-
+int getTerminalWidth();
 
 int main (int argc,char **argv){
 	if(argc != 3)
@@ -39,6 +40,8 @@ int moreOrLess(char *fileName,int numberOfLine){
 	printf("moreOrLess function\n");
 
 	print(fileContent,2,5);
+
+	lineRewind(2);
 
 	free(fileContent);
 }
@@ -134,4 +137,13 @@ void lineRewind(int lineCount){
 	
 	rewind(stdout); /* will rewind stdout to the very beginning */
 	ftruncate(1,0); /* will truncate stdout fully*/
+}
+
+int getTerminalWidth(){
+
+	struct winsize w;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
+
+    return w.ws_col;
+
 }
