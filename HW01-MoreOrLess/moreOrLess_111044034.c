@@ -16,7 +16,7 @@ void initTermios(int echo);
 char getch_(int echo);
 void resetTermios(void);
 void usageError();
-int moreOrLess(char *fileName,int numberOfLine);
+void moreOrLess(char *fileName,int numberOfLine);
 void lineRewind(int lineCount);
 int print(char *material,int start,int stop);
 char* fileRead(char *fileName,char *fileContent);
@@ -32,8 +32,12 @@ int main (int argc,char **argv){
 	return 0;
 }
 
-/* This function call print, lineRewind, fileRead function when need and decide when which is needed */
-int moreOrLess(char *fileName,int numberOfLine){
+/** This function call print, lineRewind, fileRead function when need and decide when which is needed 
+* @param: fileName		name of file for process
+* @param: numberOfLine	How many line will show
+* @return				void
+*/
+void moreOrLess(char *fileName,int numberOfLine){
 	
 	char *fileContent,bufferForStdin[4];
 	int printedLineOnTerminal,topLine=0,botLine=0,maxLine;
@@ -91,7 +95,7 @@ int moreOrLess(char *fileName,int numberOfLine){
 		    }
 		}
 		else{
-			if(botLine < maxLine){
+			if(botLine <= maxLine){
 				
 				if(botLine + numberOfLine > maxLine){
 					topLine = maxLine - numberOfLine;
@@ -110,7 +114,12 @@ int moreOrLess(char *fileName,int numberOfLine){
 	free(fileContent);
 }
 
-/* print lines between start and stop line number */
+/** print lines between start and stop line number 
+* @param: material	Character array which is buffer for origin file
+* @param: start		First line to print to screen
+* @param: stop		Last line to print to screen
+* @return			Returns how many lines primted sucessfully
+*/
 int print(char *material,int start,int stop){
 	int i,j,position=0,lineCount=1,widthOfTerminal=0;
 
@@ -150,7 +159,11 @@ int print(char *material,int start,int stop){
 
 }
 
-/* Read file which taken by first argument -fileName- and write contents to fileContent character array*/
+/** Read file which taken by first argument -fileName- and write contents to fileContent character array
+* @param: fileName		Name of file for process
+* @param: fileContent	Character array as buffer for file
+* @return 				Returns buffered character array
+*/
 char* fileRead(char *fileName,char *fileContent){
 
 	int sizeOfFile,i=0;
@@ -180,7 +193,10 @@ char* fileRead(char *fileName,char *fileContent){
     return fileContent;
 }
 
-/* Initialize new terminal i/o settings */
+/** Initialize new terminal i/o settings 
+* @param: echo 	for determine echo option 1 is echo on 0 is echo off
+* @return 		void 
+*/
 void initTermios(int echo){
 	tcgetattr(0, &old); /* grab old terminal i/o settings */
 	new = old; /* make new settings same as old settings */
@@ -189,12 +205,17 @@ void initTermios(int echo){
 	tcsetattr(0, TCSANOW, &new); /* use these new terminal i/o settings now */
 }
 
-/* Restore old terminal i/o settings */
+/** Restore old terminal i/o settings 
+* @return 				void
+*/
 void resetTermios(void){
 	tcsetattr(0, TCSANOW, &old);
 }
 
-/* Read 1 character - echo defines echo mode */
+/** Read 1 character - echo defines echo mode 
+* @param: echo 	for determine echo option 1 is echo on 0 is echo off
+* @return 		Returns readed character
+*/
 char getch_(int echo){
 	char ch;
 	initTermios(echo);
@@ -203,18 +224,26 @@ char getch_(int echo){
 	return ch;
 }
 
-/* Read 1 character without echo */
+/** Read 1 character without echo 
+* @return 		Returns readed character
+*/
 char getch(void){
 	return getch_(0);
 }
 
+/** if there is any error while calling program like missing argument this function will be call
+* @return 	void
+*/
 void usageError(){
 	printf("\nParameter Error this program should run as:\n");
 	printf("Less \"fileName\" lineNumber \n");
 	exit(-1);
 }
 
-/* Rewind stdout - terminal output - as much as lineCount */
+/** Rewind stdout - terminal output - as much as lineCount 
+* @param: lineCount 	Number of line will be remove
+* @return 				void
+*/
 void lineRewind(int lineCount){
 	int i;
 	
@@ -225,7 +254,9 @@ void lineRewind(int lineCount){
 	}
 }
 
-/* This function's code written by a stackoverflow.om user */
+/** This function's code written by a stackoverflow.om user 
+* @return 	Number of column of active terminal
+*/
 int getTerminalWidth(){
 
 	struct winsize w;
@@ -234,6 +265,10 @@ int getTerminalWidth(){
     return w.ws_col;
 }
 
+/** This function return number of line in a given character array
+*	@param: 	Character array which will be count
+*	@return 	Number of line in given array if print at active terminal at the moment
+*/
 int maxLineNumber(char *material){
 
 	int i,newLines=0;
