@@ -135,7 +135,6 @@ int print(char *material,int start,int stop){
 
 		if (j % widthOfTerminal ==0){
 			++lineCount;
-			//printf("<");
 		}
 
 		++j;
@@ -144,7 +143,6 @@ int print(char *material,int start,int stop){
 			++position;
 			++lineCount;
 			j=1;
-			//printf("|");
 		}
 	}
 
