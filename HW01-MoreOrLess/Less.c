@@ -21,6 +21,7 @@ void lineRewind(int lineCount);
 int print(char *material,int start,int stop);
 char* fileRead(char *fileName,char *fileContent);
 int getTerminalWidth();
+int maxLineNumber(char *material);
 
 int main (int argc,char **argv){
 	if(argc != 3)
@@ -34,35 +35,107 @@ int main (int argc,char **argv){
 /* This function call print, lineRewind, fileRead function when need and decide when which is needed */
 int moreOrLess(char *fileName,int numberOfLine){
 	
-	char *fileContent;
-	int printedLineOnTerminal;
+	char *fileContent,bufferForStdin[4];
+	int printedLineOnTerminal,topLine=0,botLine=0,maxLine;
 
 	fileContent=fileRead(fileName,fileContent);
 
-	printedLineOnTerminal=print(fileContent,2,5);
+	setbuf(stdin,bufferForStdin);
 
-	lineRewind(printedLineOnTerminal);
+	topLine=1;
+	botLine=numberOfLine;
 
+	printedLineOnTerminal=print(fileContent,topLine,botLine);
+	printf(" ");
+
+	while(1){
+
+		maxLine=maxLineNumber(fileContent);
+
+		memset(bufferForStdin,'\0',8);	
+		getch();
+
+		if(bufferForStdin[0] == 'q' || bufferForStdin[0] == 'Q')
+			break;
+
+		if(bufferForStdin[0] == '\n'){
+			if(botLine < maxLine){
+	        	++topLine;
+	        	++botLine;
+	        	lineRewind(printedLineOnTerminal);
+	        	printedLineOnTerminal = print(fileContent,topLine,botLine);
+			}
+		}
+
+		if(bufferForStdin[1] == 91){
+			getch(); /* skip the [ */
+		    switch(getch()) { /* the real value*/
+		        case 'A':
+		            /* code for arrow up*/		        	
+		        	if(numberOfLine > 1){
+		        		lineRewind(printedLineOnTerminal);
+			        	--topLine;
+			        	--botLine;
+		        		printedLineOnTerminal = print(fileContent,topLine,botLine);
+		        	}		        	
+		            break;
+		        case 'B':
+		            // code for arrow down
+		        	if(botLine < maxLine){
+			        	++topLine;
+			        	++botLine;
+			        	lineRewind(printedLineOnTerminal);
+			        	printedLineOnTerminal = print(fileContent,topLine,botLine);
+			        }
+		            break;
+		    }
+		}
+		else{
+			if(botLine < maxLine){
+				
+				if(botLine + numberOfLine > maxLine){
+					topLine = maxLine - numberOfLine;
+					botLine = maxLine;
+				}
+
+				topLine += numberOfLine;
+				botLine += numberOfLine;
+				lineRewind(printedLineOnTerminal);
+		    	printedLineOnTerminal = print(fileContent,topLine,botLine);
+				
+		    }
+		}
+	}
+	
 	free(fileContent);
 }
 
 /* print lines between start and stop line number */
 int print(char *material,int start,int stop){
-	int i,j,position=0,lineCount=0,widthOfTerminal=0;
+	int i,j,position=0,lineCount=1,widthOfTerminal=0;
 
 	widthOfTerminal = getTerminalWidth();
 
-	for(i=0;position < start;++i){
+	for(i = 0; lineCount < start; ++i)
+	{
 		if(material[i] == '\n')
-			++position;
+			++lineCount;
+
+		if (i != 0 && i % widthOfTerminal == 0 )
+			++lineCount;
 	}
 
-	for (j=1;position < stop; ++i)
+	lineCount = 1;
+	
+	for (j=1; start + lineCount <= stop+1; ++i)
 	{
+		if(material[i] == '\0')
+			break;
 		printf("%c",material[i]);
 
 		if (j % widthOfTerminal ==0){
 			++lineCount;
+			//printf("<");
 		}
 
 		++j;
@@ -70,7 +143,8 @@ int print(char *material,int start,int stop){
 		if(material[i] == '\n'){
 			++position;
 			++lineCount;
-			j=1;	
+			j=1;
+			//printf("|");
 		}
 	}
 
@@ -146,11 +220,11 @@ void usageError(){
 void lineRewind(int lineCount){
 	int i;
 	
-	for(i=0; i < lineCount; ++i)
-		fputs("\033[A\033[2K",stdout);
-	
-	rewind(stdout); /* will rewind stdout to the very beginning */
-	ftruncate(1,0); /* will truncate stdout fully*/
+	for(i=0; i < lineCount-1; ++i){
+		printf("\033[A");
+		printf("\033[2K");
+		printf("\r");
+	}
 }
 
 /* This function's code written by a stackoverflow.om user */
@@ -160,5 +234,16 @@ int getTerminalWidth(){
     ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
 
     return w.ws_col;
+}
 
+int maxLineNumber(char *material){
+
+	int i,newLines=0;
+
+	for(i=0; material[i] != '\0';++i){
+		if(material[i] == '\n')
+			++newLines;
+	}
+
+	return (i / getTerminalWidth())+newLines;
 }
