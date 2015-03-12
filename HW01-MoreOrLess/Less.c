@@ -18,7 +18,7 @@ void resetTermios(void);
 void usageError();
 int moreOrLess(char *fileName,int numberOfLine);
 void lineRewind(int lineCount);
-void print(char *material,int start,int stop);
+int print(char *material,int start,int stop);
 char* fileRead(char *fileName,char *fileContent);
 int getTerminalWidth();
 
@@ -33,34 +33,48 @@ int main (int argc,char **argv){
 
 /* This function call print, lineRewind, fileRead function when need and decide when which is needed */
 int moreOrLess(char *fileName,int numberOfLine){
+	
 	char *fileContent;
+	int printedLineOnTerminal;
 
 	fileContent=fileRead(fileName,fileContent);
 
-	printf("moreOrLess function\n");
+	printedLineOnTerminal=print(fileContent,2,5);
 
-	print(fileContent,2,5);
-
-	lineRewind(2);
+	lineRewind(printedLineOnTerminal);
 
 	free(fileContent);
 }
 
 /* print lines between start and stop line number */
-void print(char *material,int start,int stop){
-	int i,position=0;
+int print(char *material,int start,int stop){
+	int i,j,position=0,lineCount=0,widthOfTerminal=0;
+
+	widthOfTerminal = getTerminalWidth();
 
 	for(i=0;position < start;++i){
 		if(material[i] == '\n')
 			++position;
 	}
 
-	for (;position < stop; ++i)
+	for (j=1;position < stop; ++i)
 	{
 		printf("%c",material[i]);
-		if(material[i] == '\n')
+
+		if (j % widthOfTerminal ==0){
+			++lineCount;
+		}
+
+		++j;
+
+		if(material[i] == '\n'){
 			++position;
+			++lineCount;
+			j=1;	
+		}
 	}
+
+	return lineCount;
 
 }
 
@@ -139,6 +153,7 @@ void lineRewind(int lineCount){
 	ftruncate(1,0); /* will truncate stdout fully*/
 }
 
+/* This function's code written by a stackoverflow.om user */
 int getTerminalWidth(){
 
 	struct winsize w;
