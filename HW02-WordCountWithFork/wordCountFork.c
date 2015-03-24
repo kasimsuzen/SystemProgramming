@@ -4,6 +4,8 @@
 */
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/types.h>
+#include <dirent.h>
 
 void usageError();
 int isAlpha(char key);
@@ -11,8 +13,16 @@ int counter(FILE * input);
 
 int main(int argc,char ** argv){
 
+	DIR *dp;
+
 	if(argc != 2)
 		usageError();
+
+	dp = opendir(argv[1]);
+	if(dp == NULL){
+		fprintf(stderr,"%s named file could not opened either directory does not exist or this user does not have acess to directory \n",argv[1]);
+		usageError();
+	}
 }
 
 /**
