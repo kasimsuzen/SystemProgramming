@@ -6,10 +6,16 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <dirent.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 void usageError();
 int isAlpha(char key);
-int counter(FILE * input);
+int counter(char * fileName);
+void crawler(char *rootDirectory);
+void resultPrinter(char * pathOfDirectory,int founded);
 
 int main(int argc,char ** argv){
 
@@ -23,6 +29,12 @@ int main(int argc,char ** argv){
 		fprintf(stderr,"%s named file could not opened either directory does not exist or this user does not have acess to directory \n",argv[1]);
 		usageError();
 	}
+
+	closedir(dp);
+
+	crawler(argv[1]);
+
+	return(0);
 }
 
 /**
@@ -35,13 +47,127 @@ void usageError(){
 }
 
 /**
+* This function will crawl through and into directories and their subdirectories
+* @param: name of the root directory which search will begin
+*/
+void crawler(char *rootDirectory){
+	pid_t pid,* pids;
+
+	int  i,count=0,currentPid=0,numberOfSubdirectories=0,status,allocatedSpace;
+	DIR *dp;
+	struct dirent *ep;
+	char ** itemList;
+
+	dp = opendir(rootDirectory); 
+	/* open directory and count all elements inside directory include parent('..') and current directory('.') symbol */
+	if (dp != NULL)
+	{
+		for (count=0;ep = readdir (dp);++count);
+
+		(void) closedir(dp);
+	}
+	else
+		perror ("Couldn't open the directory");
+	allocatedSpace = count;
+	itemList= malloc(count*sizeof(char*));
+
+	for(i=0 ;i < count;++i)
+		itemList[i]= malloc(256*sizeof(char));
+
+	/* allocate pid numbers for each directory and file -2 here for . and .. (current and parent directory symbols) */
+	pids = malloc((count - 2)*sizeof(pid_t));
+
+	dp = opendir(rootDirectory);
+
+	if(dp != NULL){
+		
+		/* start from beginnig of the directory and search till the end of directory pointer */ 
+		for (count=0;ep = readdir (dp);++count){
+
+			/* if readed element is directory this function will call itself with this directory */
+			if(ep->d_type == DT_DIR && strcmp(".",ep->d_name) != 0 && strcmp("..",ep->d_name) != 0){
+
+				if( (pids[numberOfSubdirectories] = fork()) < 0 ){
+					perror("New process could not created this program will be abort\n");
+					abort();
+				}
+
+				if(pids[numberOfSubdirectories] == 0){
+
+					/*editing directory name for calling crawler function*/
+					strcpy(itemList[count],rootDirectory);
+					strcat(itemList[count],"/");
+					strcat(itemList[count],ep->d_name);
+
+					crawler(itemList[count]);
+					++numberOfSubdirectories;
+					exit(0);
+
+				}
+			}
+
+			/* if founded element is not directory it can only be file so name will edit */
+			else if(strcmp(ep->d_name,".") != 0 && strcmp(ep->d_name,"..") != 0){
+                strcpy(itemList[count],rootDirectory);
+                strcat(itemList[count],"/");
+                strcat(itemList[count],ep->d_name);
+            }
+
+        }
+
+        (void)closedir(dp);
+    }
+    else
+        perror ("Couldn't open the directory");
+
+    /* Start new process for founded files. */
+    for (i = currentPid; i < count; ++i)
+    {
+        if ((pids[i] = fork()) < 0)
+        {
+			perror("New process could not created this program will be abort\n");
+            abort();
+        }
+        else if (pids[i] == 0)
+        {
+            if(strcmp(itemList[i],".") != 0 && strcmp(itemList[i],"..") != 0)
+            {
+                resultPrinter(itemList[i],counter(itemList[i]));
+            }
+            exit(0);
+        }
+    }
+
+    /* Wait for children to exit. */
+    while (count > 0)
+    {
+        pid = wait(&status);
+        --count;  // TODO(pts): Remove pid from the pids array.
+    }
+
+    free(pids);
+
+    for(i=0; i < allocatedSpace;++i)
+        free(itemList[i]);
+
+    free(itemList);
+}
+
+void resultPrinter(char * pathOfDirectory,int founded){
+	fprintf(stderr,"%d numbered process founded %d word at %s \n",getpid(),founded,pathOfDirectory);
+}
+
+/**
 * Counts word in the file which given only word counts are consist only alphabetic characters
-* @param: input file pointer for file
+* @param: input file name for file
 * return counted words number
 */
-int counter(FILE * input){
+int counter(char * fileName){
+	FILE * input;
 	int flag=1,numberOfWords=0;
 	char temp;
+
+	input = fopen(fileName,"r");
 	
 	while(!feof(input)){
 		fscanf(input,"%c",&temp);
@@ -58,8 +184,8 @@ int counter(FILE * input){
 			flag = 1; /* reset flag because of space or new line*/
 		}
 	}
-	
- 	return numberOfWords;
+	fclose(input);
+	return numberOfWords;
 }
 
 
