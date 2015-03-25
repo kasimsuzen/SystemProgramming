@@ -53,7 +53,7 @@ void usageError(){
 void crawler(char *rootDirectory){
 	pid_t pid,* pids;
 
-	int  i,count=0,currentPid=0,numberOfSubdirectories=0,status,allocatedSpace;
+	int  i,count=0,currentPid=0,numberOfSubdirectories=0,status,allocatedSpace,numberOfFile=0;
 	DIR *dp;
 	struct dirent *ep;
 	char ** itemList;
@@ -86,6 +86,7 @@ void crawler(char *rootDirectory){
 
 			/* if readed element is directory this function will call itself with this directory */
 			if(ep->d_type == DT_DIR && strcmp(".",ep->d_name) != 0 && strcmp("..",ep->d_name) != 0){
+					++numberOfSubdirectories;
 
 				if( (pids[numberOfSubdirectories] = fork()) < 0 ){
 					perror("New process could not created this program will be abort\n");
@@ -100,7 +101,6 @@ void crawler(char *rootDirectory){
 					strcat(itemList[count],ep->d_name);
 
 					crawler(itemList[count]);
-					++numberOfSubdirectories;
 					exit(0);
 
 				}
@@ -111,6 +111,7 @@ void crawler(char *rootDirectory){
                 strcpy(itemList[count],rootDirectory);
                 strcat(itemList[count],"/");
                 strcat(itemList[count],ep->d_name);
+                ++numberOfFile;
             }
 
         }
@@ -123,6 +124,7 @@ void crawler(char *rootDirectory){
     /* Start new process for founded files. */
     for (i = currentPid; i < count; ++i)
     {
+
         if ((pids[i] = fork()) < 0)
         {
 			perror("New process could not created this program will be abort\n");
@@ -138,11 +140,13 @@ void crawler(char *rootDirectory){
         }
     }
 
+    printf("%d process created for %d subdirectories and %d files of %s\n",count-2,numberOfSubdirectories,numberOfFile,rootDirectory);
+    
+
     /* Wait for children to exit. */
-    while (count > 0)
+    for(i=0;count > i;++i)
     {
         pid = wait(&status);
-        --count;  // TODO(pts): Remove pid from the pids array.
     }
 
     free(pids);
