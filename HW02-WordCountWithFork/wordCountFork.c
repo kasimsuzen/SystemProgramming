@@ -141,7 +141,7 @@ void crawler(char *rootDirectory){
     }
 
     printf("%d process created for %d subdirectories and %d files of %s\n",count-2,numberOfSubdirectories,numberOfFile,rootDirectory);
-    
+
 
     /* Wait for children to exit. */
     for(i=0;count > i;++i)
@@ -168,7 +168,7 @@ void resultPrinter(char * pathOfDirectory,int founded){
 */
 int counter(char * fileName){
 	FILE * input;
-	int flag=1,numberOfWords=0;
+	int flag=1,flagForExtraSpace=0,numberOfWords=0;
 	char temp;
 
 	input = fopen(fileName,"r");
@@ -176,14 +176,20 @@ int counter(char * fileName){
 	while(!feof(input)){
 		fscanf(input,"%c",&temp);
 
-		if(!isAlpha(temp) && temp != ' ' && temp != '\n') /* checking character is alphabetic */
+		if(!isAlpha(temp) && temp != ' ' && temp != '\n'){ /* checking character is alphabetic */
 			flag = 0;
+		}
 		
+		if(isAlpha(temp))
+			flagForExtraSpace=0; /* after one alphabetic character read we know a word has ocurred so space flag turned to true */
+
 		/*EOF checked because if there is no space or new line character between eof and last character of word */
 		if(temp == ' ' || temp == '\n' || feof(input)){
 			
-			if(flag == 1) /* if flag equals to 1 characters between previos space and current are alphabetic words so increase word founded */
+			if(flag == 1 && flagForExtraSpace ==0){ /* if flag equals to 1 characters between previos space and current are alphabetic words so increase word founded */
 				++numberOfWords;
+				flagForExtraSpace = 1;
+			}
 
 			flag = 1; /* reset flag because of space or new line*/
 		}
