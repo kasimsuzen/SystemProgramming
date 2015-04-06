@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <linux/limits.h>
 
 void usageError();
 int isAlpha(char key);
@@ -72,7 +73,7 @@ void crawler(char *rootDirectory){
 	itemList= malloc(count*sizeof(char*));
 
 	for(i=0 ;i < count;++i)
-		itemList[i]= malloc(256*sizeof(char));
+		itemList[i]= malloc(PATH_MAX*sizeof(char));
 
 	/* allocate pid numbers for each directory and file -2 here for . and .. (current and parent directory symbols) */
 	pids = malloc((count - 2)*sizeof(pid_t));
