@@ -1,0 +1,17 @@
+This homework will work like uniq but search recursively through directories and count words not lines
+
+Program will search recursively into levels of directories and count words in each file and send the result to main process
+Main process will write a log file for count of each word in files.
+Main process will print count of unique words.
+If there is a non-character in word such as numbers, spelling marks etc. word will not count but spelling marks at end of the word is eligible to count
+
+Prints example output is:
+There are x unique word in <directoryName>
+There are x subdirectory and x files under <directoryName>
+
+Log file example:
+"word" <count>
+"word" <count>
+
+usage:
+wordCount -directoryName
