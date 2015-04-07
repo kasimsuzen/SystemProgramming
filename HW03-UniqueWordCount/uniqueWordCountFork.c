@@ -18,6 +18,12 @@ int counter(char * fileName);
 void crawler(char *rootDirectory);
 void resultPrinter(char * pathOfDirectory,int founded);
 
+struct uniqueWords
+{
+	char buffer[50];
+	int count;
+};
+
 int main(int argc,char ** argv){
 
 	DIR *dp;
