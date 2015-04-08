@@ -15,14 +15,13 @@
 void usageError();
 int isAlpha(char key);
 int counter(char * fileName,int fileDescriptor);
-void crawler(char *rootDirectory,int fileDescriptors[2]);
-void resultPrinter(char * pathOfDirectory,int founded);
-int logger(int fileDescriptor);
+void crawler(char *rootDirectory,int fileDescriptorsWord[2]);
+int logger(int fileDescriptorWords);
 
 int main(int argc,char ** argv){
 
 	DIR *dp;
-	int count,fileDescriptorsForPipe[2]; /* 0 will use for reading, 1 will use for writing*/ 
+	int count,pipeFilesForWords[2]; /* 0 will use for reading, 1 will use for writing*/ 
 
 	if(argc != 2)
 		usageError();
@@ -35,15 +34,15 @@ int main(int argc,char ** argv){
 
 	closedir(dp);
 
-	pipe(fileDescriptorsForPipe);
+	pipe(pipeFilesForWords);
 
-	crawler(argv[1],fileDescriptorsForPipe);
+	crawler(argv[1],pipeFilesForWords);
 
-	close(fileDescriptorsForPipe[1]);
+	close(pipeFilesForWords[1]);
 
-	count=logger(fileDescriptorsForPipe[0]);
+	count=logger(pipeFilesForWords[0]);
 
-	fprintf(stderr,"count is %d\n",count);
+	fprintf(stderr,"There are %d unique word\n",count);
 
 	return(0);
 }
@@ -61,13 +60,13 @@ void usageError(){
 * This function will crawl through and into directories and their subdirectories
 * @param: name of the root directory which search will begin
 */
-void crawler(char *rootDirectory,int fileDescriptors[2]){
+void crawler(char *rootDirectory,int fileDescriptorsWord[2]){
 	pid_t pid,* pids;
 
 	int  i,count=0,currentPid=0,numberOfSubdirectories=0,status,allocatedSpace,numberOfFile=0;
 	DIR *dp;
 	struct dirent *ep;
-	char ** itemList;
+	char ** itemList,dir_number[20];
 
 	dp = opendir(rootDirectory); 
 	/* open directory and count all elements inside directory include parent('..') and current directory('.') symbol */
@@ -111,7 +110,7 @@ void crawler(char *rootDirectory,int fileDescriptors[2]){
 					strcat(itemList[count],"/");
 					strcat(itemList[count],ep->d_name);
 
-					crawler(itemList[count],fileDescriptors);
+					crawler(itemList[count],fileDescriptorsWord);
 					exit(0);
 
 				}
@@ -145,15 +144,16 @@ void crawler(char *rootDirectory,int fileDescriptors[2]){
 		{
 			if(strcmp(itemList[i],".") != 0 && strcmp(itemList[i],"..") != 0)
 			{
-				close(fileDescriptors[0]);
-				counter(itemList[i],fileDescriptors[1]);
+				close(fileDescriptorsWord[0]);
+				counter(itemList[i],fileDescriptorsWord[1]);
 			}
 			exit(0);
 		}
 	}
 
 	printf("%d process created for %d subdirectories and %d files of %s\n",count-2,numberOfSubdirectories,numberOfFile,rootDirectory);
-
+	sscanf(dir_number,"! %d %d\n",&numberOfSubdirectories,&numberOfFile);
+	write(fileDescriptorsWord[1],dir_number,strlen(dir_number));
 
 	/* Wait for children to exit. */
 	for(i=0;count > i;++i)
@@ -236,20 +236,36 @@ int isAlpha(char key){
 
 /**
 * This function read from pipe and writes a log file about each words count
-* @param: fileDescriptor reading side of pipe
+* @param: fileDescriptorWords reading side of pipe
 * return Returns number of unique words
 */
-int logger(int fileDescriptor){
+int logger(int fileDescriptorWords){
 
-	char temp[50],buffer[50];
-	int count,i=0,point,flag=0,flag2=0,uniqueCount=0;
+	char temp[50],buffer[50], temp2[50], ignore;
+	int count,i=0,j=0,point,flag=0,flagForNewWord=0,flagForDirectory = 0,uniqueCount=0,subdirectories=0,numberOfFile=0;
 	FILE * logFile;
 	logFile = fopen("logFile","w+");
 
 	memset(temp,'\0',50);
 	
-	while(0 != read(fileDescriptor,&temp[i],1) ){
+	while(0 != read(fileDescriptorWords,&temp[i],1) ){
 		//fprintf(stderr,"%c %d",temp[i],i);
+
+		if(temp[0] == '!'){
+			if(temp[i] == '\n'){
+				strcpy(temp2, temp);
+				sscanf(temp2, "%c", &ignore); 
+				sscanf(temp2, "%c", &ignore);
+				sscanf(temp2, "%d", &j);
+				subdirectories += j;
+				sscanf(temp2, "%c", &ignore);
+				sscanf(temp2, "%d", &j);
+				numberOfFile += j;
+				i=0;
+				continue;
+			}
+			++i;
+		}
 
 		if(temp[i] == '\n'){
 			temp[i] = '\0';
@@ -271,12 +287,12 @@ int logger(int fileDescriptor){
 						fseek(logFile,point+1,SEEK_SET);
 						fprintf(logFile,"%s %d\n",temp,++count );
 						//printf("%s flag 1 should be %d %d \n",temp,count,count-1 );
-						flag2=1;
+						flagForNewWord=1;
 						break;
 					}
 
 				}
-				if(flag2 == 0){
+				if(flagForNewWord == 0){
 					fprintf(logFile,"%s %d\n",temp,1 );
 					//printf("%s flag 2 should be %d %d \n",temp,count,count-1 );
 					++uniqueCount;
@@ -285,11 +301,12 @@ int logger(int fileDescriptor){
 			i=-1;
 			//fprintf(stderr,"rewinded\n\n\n");
 		}
-		flag2=0;
+		flagForNewWord=0;
 		rewind(logFile);
 		++i;
 	}
 
 	fclose(logFile);
+	
 	return uniqueCount;
 }
