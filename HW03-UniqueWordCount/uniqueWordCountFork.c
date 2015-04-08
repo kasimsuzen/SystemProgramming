@@ -18,12 +18,6 @@ int counter(char * fileName);
 void crawler(char *rootDirectory);
 void resultPrinter(char * pathOfDirectory,int founded);
 
-struct uniqueWords
-{
-	char buffer[50];
-	int count;
-};
-
 int main(int argc,char ** argv){
 
 	DIR *dp;
@@ -216,4 +210,43 @@ int isAlpha(char key){
 		return 1;
 	else
 		return 0;
+}
+
+/**
+* This function read from pipe and writes a log file about each words count
+* @param: fileDescriptor reading side of pipe
+*/
+void logger(int fileDescriptor){
+
+	char temp[50],buffer[50];
+	int count,i=0,point;
+	FILE * logFile;
+	logFile = fopen("ss","w+");
+
+	memset(temp,'\0',50);
+	
+	while(0 != read(fileDescriptor,&temp[i],1) ){
+		//fprintf(logFile,"%c",temp[i]);
+
+		if(temp[i] == '\n'){
+			temp[i] = '\0';
+			while(!feof(logFile)){
+				point=ftell(logFile);
+
+				fscanf(logFile,"%s",buffer);
+				fscanf(logFile,"%d",&count);
+
+				if(strcmp(buffer,temp) == 0){
+					fseek(logFile,point+1,SEEK_SET);
+					fprintf(logFile,"%s %d\n",buffer,++count );
+					break;
+					//printf("%d should be 4948 4947 \n", count );
+				}
+
+			}
+		}
+		rewind(logFile);
+		++i;
+	}
+	
 }
