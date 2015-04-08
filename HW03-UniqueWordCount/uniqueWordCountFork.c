@@ -14,13 +14,15 @@
 
 void usageError();
 int isAlpha(char key);
-int counter(char * fileName);
-void crawler(char *rootDirectory);
+int counter(char * fileName,int fileDescriptor);
+void crawler(char *rootDirectory,int fileDescriptors[2]);
 void resultPrinter(char * pathOfDirectory,int founded);
+int logger(int fileDescriptor);
 
 int main(int argc,char ** argv){
 
 	DIR *dp;
+	int count,fileDescriptorsForPipe[2]; /* 0 will use for reading, 1 will use for writing*/ 
 
 	if(argc != 2)
 		usageError();
@@ -33,7 +35,15 @@ int main(int argc,char ** argv){
 
 	closedir(dp);
 
-	crawler(argv[1]);
+	pipe(fileDescriptorsForPipe);
+
+	crawler(argv[1],fileDescriptorsForPipe);
+
+	close(fileDescriptorsForPipe[1]);
+
+	count=logger(fileDescriptorsForPipe[0]);
+
+	fprintf(stderr,"count is %d\n",count);
 
 	return(0);
 }
@@ -51,7 +61,7 @@ void usageError(){
 * This function will crawl through and into directories and their subdirectories
 * @param: name of the root directory which search will begin
 */
-void crawler(char *rootDirectory){
+void crawler(char *rootDirectory,int fileDescriptors[2]){
 	pid_t pid,* pids;
 
 	int  i,count=0,currentPid=0,numberOfSubdirectories=0,status,allocatedSpace,numberOfFile=0;
@@ -101,7 +111,7 @@ void crawler(char *rootDirectory){
 					strcat(itemList[count],"/");
 					strcat(itemList[count],ep->d_name);
 
-					crawler(itemList[count]);
+					crawler(itemList[count],fileDescriptors);
 					exit(0);
 
 				}
@@ -109,57 +119,54 @@ void crawler(char *rootDirectory){
 
 			/* if founded element is not directory it can only be file so name will edit */
 			else if(strcmp(ep->d_name,".") != 0 && strcmp(ep->d_name,"..") != 0){
-                strcpy(itemList[count],rootDirectory);
-                strcat(itemList[count],"/");
-                strcat(itemList[count],ep->d_name);
-                ++numberOfFile;
-            }
+				strcpy(itemList[count],rootDirectory);
+				strcat(itemList[count],"/");
+				strcat(itemList[count],ep->d_name);
+				++numberOfFile;
+			}
 
-        }
+		}
 
-        (void)closedir(dp);
-    }
-    else
-        perror ("Couldn't open the directory");
+		(void)closedir(dp);
+	}
+	else
+		perror ("Couldn't open the directory");
 
-    /* Start new process for founded files. */
-    for (i = currentPid; i < count; ++i)
-    {
+	/* Start new process for founded files. */
+	for (i = currentPid; i < count; ++i)
+	{
 
-        if ((pids[i] = fork()) < 0)
-        {
+		if ((pids[i] = fork()) < 0)
+		{
 			perror("New process could not created this program will be abort\n");
-            abort();
-        }
-        else if (pids[i] == 0)
-        {
-            if(strcmp(itemList[i],".") != 0 && strcmp(itemList[i],"..") != 0)
-            {
-                resultPrinter(itemList[i],counter(itemList[i]));
-            }
-            exit(0);
-        }
-    }
+			abort();
+		}
+		else if (pids[i] == 0)
+		{
+			if(strcmp(itemList[i],".") != 0 && strcmp(itemList[i],"..") != 0)
+			{
+				close(fileDescriptors[0]);
+				counter(itemList[i],fileDescriptors[1]);
+			}
+			exit(0);
+		}
+	}
 
-    printf("%d process created for %d subdirectories and %d files of %s\n",count-2,numberOfSubdirectories,numberOfFile,rootDirectory);
+	printf("%d process created for %d subdirectories and %d files of %s\n",count-2,numberOfSubdirectories,numberOfFile,rootDirectory);
 
 
-    /* Wait for children to exit. */
-    for(i=0;count > i;++i)
-    {
-        pid = wait(&status);
-    }
+	/* Wait for children to exit. */
+	for(i=0;count > i;++i)
+	{
+		pid = wait(&status);
+	}
 
-    free(pids);
+	free(pids);
 
-    for(i=0; i < allocatedSpace;++i)
-        free(itemList[i]);
+	for(i=0; i < allocatedSpace;++i)
+		free(itemList[i]);
 
-    free(itemList);
-}
-
-void resultPrinter(char * pathOfDirectory,int founded){
-	fprintf(stderr,"%d numbered process founded %d word at %s \n",getpid(),founded,pathOfDirectory);
+	free(itemList);
 }
 
 /**
@@ -167,10 +174,10 @@ void resultPrinter(char * pathOfDirectory,int founded){
 * @param: input file name for file
 * return counted words number
 */
-int counter(char * fileName){
+int counter(char * fileName,int fileDescriptor){
 	FILE * input;
-	int flag=1,flagForExtraSpace=0,numberOfWords=0;
-	char temp;
+	int flag=1,flagForExtraSpace=0,numberOfWords=0,position=0;
+	char temp,temp_arr[200];
 
 	input = fopen(fileName,"r");
 	
@@ -180,6 +187,12 @@ int counter(char * fileName){
 		if(!isAlpha(temp) && temp != ' ' && temp != '\n'){ /* checking character is alphabetic */
 			flag = 0;
 		}
+
+		if(isAlpha(temp) && temp != ' ' && temp != '\n'){
+			temp_arr[position] = temp;
+			++position;
+			//fprintf(stderr,"%c\n",temp );
+		}
 		
 		if(isAlpha(temp))
 			flagForExtraSpace=0; /* after one alphabetic character read we know a word has ocurred so space flag turned to true */
@@ -188,8 +201,17 @@ int counter(char * fileName){
 		if(temp == ' ' || temp == '\n' || feof(input)){
 			
 			if(flag == 1 && flagForExtraSpace ==0){ /* if flag equals to 1 characters between previos space and current are alphabetic words so increase word founded */
+				
+				if(temp_arr[position-1] == '.' || temp_arr[position-1] == ',')
+					--position;
+
 				++numberOfWords;
 				flagForExtraSpace = 1;
+				temp_arr[position] = '\n';
+				temp_arr[position + 1] = '\0';
+				//fprintf(stderr,"%s",temp_arr);
+				write(fileDescriptor,temp_arr,strlen(temp_arr));
+				position=0;
 			}
 
 			flag = 1; /* reset flag because of space or new line*/
@@ -215,38 +237,59 @@ int isAlpha(char key){
 /**
 * This function read from pipe and writes a log file about each words count
 * @param: fileDescriptor reading side of pipe
+* return Returns number of unique words
 */
-void logger(int fileDescriptor){
+int logger(int fileDescriptor){
 
 	char temp[50],buffer[50];
-	int count,i=0,point;
+	int count,i=0,point,flag=0,flag2=0,uniqueCount=0;
 	FILE * logFile;
-	logFile = fopen("ss","w+");
+	logFile = fopen("logFile","w+");
 
 	memset(temp,'\0',50);
 	
 	while(0 != read(fileDescriptor,&temp[i],1) ){
-		//fprintf(logFile,"%c",temp[i]);
+		//fprintf(stderr,"%c %d",temp[i],i);
 
 		if(temp[i] == '\n'){
 			temp[i] = '\0';
-			while(!feof(logFile)){
-				point=ftell(logFile);
-
-				fscanf(logFile,"%s",buffer);
-				fscanf(logFile,"%d",&count);
-
-				if(strcmp(buffer,temp) == 0){
-					fseek(logFile,point+1,SEEK_SET);
-					fprintf(logFile,"%s %d\n",buffer,++count );
-					break;
-					//printf("%d should be 4948 4947 \n", count );
-				}
-
+			if(flag == 0){
+				fprintf(logFile,"%s %d\n",temp,1 );
+				//printf("%s should be %d %d \n",temp,count,count-1 );
+				++uniqueCount;
+				flag = 1;
 			}
+			else{
+				while(!feof(logFile)){
+					point=ftell(logFile);
+
+					fscanf(logFile,"%s",buffer);
+					fscanf(logFile,"%d",&count);
+					//fprintf(stderr,"buf :%s temp:%s i:%d c:%d\n",buffer,temp,i,count);
+
+					if(strcmp(buffer,temp) == 0){
+						fseek(logFile,point+1,SEEK_SET);
+						fprintf(logFile,"%s %d\n",temp,++count );
+						//printf("%s flag 1 should be %d %d \n",temp,count,count-1 );
+						flag2=1;
+						break;
+					}
+
+				}
+				if(flag2 == 0){
+					fprintf(logFile,"%s %d\n",temp,1 );
+					//printf("%s flag 2 should be %d %d \n",temp,count,count-1 );
+					++uniqueCount;
+				}
+			}
+			i=-1;
+			//fprintf(stderr,"rewinded\n\n\n");
 		}
+		flag2=0;
 		rewind(logFile);
 		++i;
 	}
-	
+
+	fclose(logFile);
+	return uniqueCount;
 }
