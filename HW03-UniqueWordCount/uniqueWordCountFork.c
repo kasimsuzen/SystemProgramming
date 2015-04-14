@@ -41,6 +41,7 @@ int main(int argc,char ** argv){
 	close(pipeFilesForWords[1]);
 
 	count=logger(pipeFilesForWords[0]);
+	close(pipeFilesForWords[0]);
 
 	fprintf(stderr,"There are %d unique word\n",count);
 
@@ -146,12 +147,12 @@ void crawler(char *rootDirectory,int fileDescriptorsWord[2]){
 			{
 				close(fileDescriptorsWord[0]);
 				counter(itemList[i],fileDescriptorsWord[1]);
+				close(fileDescriptorsWord[1]);
 			}
 			exit(0);
 		}
 	}
 
-	printf("%d process created for %d subdirectories and %d files of %s\n",count-2,numberOfSubdirectories,numberOfFile,rootDirectory);
 	sscanf(dir_number,"! %d %d\n",&numberOfSubdirectories,&numberOfFile);
 	write(fileDescriptorsWord[1],dir_number,strlen(dir_number));
 
@@ -242,8 +243,9 @@ int isAlpha(char key){
 int logger(int fileDescriptorWords){
 
 	char temp[50],buffer[50], temp2[50], ignore;
-	int count,i=0,j=0,point,flag=0,flagForNewWord=0,flagForDirectory = 0,uniqueCount=0,subdirectories=0,numberOfFile=0;
+	int count,i=0,j=0,flag=0,flagForNewWord=0,uniqueCount=0,subdirectories=0,numberOfFile=0;
 	FILE * logFile;
+	long int point;
 	logFile = fopen("logFile","w+");
 
 	memset(temp,'\0',50);
@@ -269,7 +271,9 @@ int logger(int fileDescriptorWords){
 
 		if(temp[i] == '\n'){
 			temp[i] = '\0';
+			//fprintf(stderr, "%s\n", temp);
 			if(flag == 0){
+				//fprintf(stderr, "%s\n", temp);
 				fprintf(logFile,"%s %d\n",temp,1 );
 				//printf("%s should be %d %d \n",temp,count,count-1 );
 				++uniqueCount;
@@ -278,13 +282,14 @@ int logger(int fileDescriptorWords){
 			else{
 				while(!feof(logFile)){
 					point=ftell(logFile);
-
+						//fprintf(stderr, "%d\n", point);
 					fscanf(logFile,"%s",buffer);
 					fscanf(logFile,"%d",&count);
 					//fprintf(stderr,"buf :%s temp:%s i:%d c:%d\n",buffer,temp,i,count);
 
 					if(strcmp(buffer,temp) == 0){
 						fseek(logFile,point+1,SEEK_SET);
+						//fprintf(stderr, "%s\n", temp);
 						fprintf(logFile,"%s %d\n",temp,++count );
 						//printf("%s flag 1 should be %d %d \n",temp,count,count-1 );
 						flagForNewWord=1;
@@ -293,6 +298,7 @@ int logger(int fileDescriptorWords){
 
 				}
 				if(flagForNewWord == 0){
+					//fprintf(stderr, "%s\n", temp);
 					fprintf(logFile,"%s %d\n",temp,1 );
 					//printf("%s flag 2 should be %d %d \n",temp,count,count-1 );
 					++uniqueCount;
