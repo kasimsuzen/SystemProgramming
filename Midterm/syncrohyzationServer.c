@@ -1,6 +1,7 @@
 /**
 * Written by Kasım Süzen at 14/04/2015
 * This is midterm project server for CSE 244 class at GTU
+* TODO client math server fifo name
 */
 
 int operation(char * fifoName,int operationNumber);
@@ -75,6 +76,14 @@ int listener(char * nameOfFifo){
 			operationNumber = atoi(&message[strlen("Server ")+1]);
 			strcpy(newFifoName,&message[strlen("Server ")+3]);
 			strcat(newFifoName,"_fifo");
+
+			close(mainFifo);
+			mainFifo = open(nameOfFifo,O_WRONLY);
+
+			write(mainFifo,newFifoName,strlen(newFifoName));
+
+			close(mainFifo);
+			mainFifo = open(nameOfFifo,O_RDONLY);
 
 			if((childpid = fork()) == -1)
 		    {
