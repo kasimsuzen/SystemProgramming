@@ -13,12 +13,8 @@
 #include <ctype.h>
 
 int operationNumberFinder(char * arg);
-int usage();
 
 int main(int argc,char ** argv){
-
-	if(argc < 4)
-		usage();
 	int waitTime,fifoSynch,i=0,mathFifo,operationNumber;
 	char message[120],temp[15],fifoName[70],mainFifo[80];
 	struct stat st;
@@ -26,12 +22,13 @@ int main(int argc,char ** argv){
 	FILE * log;
 	strcpy(mainFifo,&argv[1][1]);
 
+	fprintf(stderr,"%s\n",mainFifo);
 	fifoSynch = open(mainFifo,O_WRONLY);
 
 	operationNumber = operationNumberFinder(argv[3]);
 
 	sprintf(message,"Server %d %d\n",operationNumber,getpid());
-	sprintf(temp,"client%d-log",operationNumber);
+	sprintf(temp,"client%d",operationNumber);
 	
 	log=fopen(temp,"w+");
 
@@ -43,12 +40,17 @@ int main(int argc,char ** argv){
 	while(1){
 		if (read(fifoSynch, &message[i] ,1) != 0)
         {
+        	fprintf(stderr,"%c\n",message[i]);
+            
             if(message[i] == '\n'){
             	sprintf(temp,"%d",getpid());
     			message[i+1]='\0';
 
+    			fprintf(stderr,"message %s \n",message);
             	/*checks if message at fifo is for this client */
+            	fprintf(stderr,"debug%s\n",message);
             	if(strncmp(temp,message,strlen(temp)) == 0){
+            		fprintf(stderr,"debug2%sq\n",message);
             		/*Take new fifoName for message */
             		strcpy(fifoName,message);
             		fifoName[i]='\0';
@@ -73,20 +75,25 @@ int main(int argc,char ** argv){
 
         ++i;
 	}
+	fprintf(stderr,"fifo opening q%sq\n",fifoName);
 	if (stat(fifoName, &st) != 0){
         i=mkfifo(fifoName, 0777);
         if( i != 0)
         	perror("Client error at creation ");
 	}else
 		perror("stat hata ");
+
+	fprintf(stderr,"fifo oluşturuldu \n");
 	
 	mathFifo = open(fifoName,O_WRONLY);
 	if(mathFifo == -1)
 		perror("Open error: ");
+	fprintf(stderr,"fifo açıldı \n");
 
 	memset(message,'\0',100);
 	
 	waitTime = atoi(argv[2]);
+	fprintf(stderr,"wait%d\n",waitTime);
 
 	sprintf(message,"Math %d ",waitTime);
 	strcat(message,argv[4]);
@@ -114,6 +121,7 @@ int main(int argc,char ** argv){
 	waitTime = atoi(&argv[2][1]);
 
 	write(mathFifo,message,strlen(message));
+	fprintf(stderr,"mesaj sonu --%s--\n",message);
 
 	close(mathFifo);
 
@@ -140,6 +148,7 @@ int main(int argc,char ** argv){
 
 	}
 
+	fprintf(stderr,"readed value from server %s \n",message);
 	fprintf(log,"result is %s\n",message);
 	sleep(waitTime);
 
@@ -171,6 +180,8 @@ int operationNumberFinder(char * arg){
 	
 	arg[i] = '\0';
 
+	fprintf(stderr,"oper %s\n",arg);
+
 	if(strcmp(arg,"operation1") == 0 || strcmp(arg,"-operation1") == 0 ||strcmp(arg,"1") == 0 )
 		return 1;
 
@@ -186,10 +197,4 @@ int operationNumberFinder(char * arg){
 		fprintf(stderr,"Operation number is faulty %s\n",arg);
 		return -1;
 	}
-}
-
-int usage(){
-	fprintf(stderr,"Usage is wrong\n");
-	fprintf(stderr,"./clientX -<mainFifoName> -<waitingTime> -<operationName> -<parametre_1> ...-<parametre_k>;\n");
-	exit(0);
 }

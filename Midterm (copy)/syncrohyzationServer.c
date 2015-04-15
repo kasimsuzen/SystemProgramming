@@ -39,22 +39,31 @@ int listener(char * nameOfFifo){
 
 	if (stat(nameOfFifo, &st) != 0)
         mkfifo(nameOfFifo, 0777);
+   
+   fprintf(stderr,"debug1 %s\n",nameOfFifo);
 
    	mainFifo = open(nameOfFifo, O_RDONLY);
 
    	i=0;
     while(1){
+    	fprintf(stderr,"debug2\n");
 		while (flag == 0)
 		{
+    		fprintf(stderr,"debug3\n");
 		    if (read(mainFifo, &message[i] ,1) != 0)
 		    {
+    			fprintf(stderr,"debug4 %c\n",message[i]);
 
 		        if(message[i] == '\n'){
 		    	/*Checks the messages for is this for server*/
+    			
+    			fprintf(stderr,"debug5 \n");
 
 		        if(strncmp(message,"Server ",strlen("Server ")) == 0){
 		        	flag = 1;
 		        	message[i+1] ='\0';
+    				fprintf(stderr,"debug5 %s\n",message);
+
 		        	break;
 		        }
 
@@ -75,10 +84,12 @@ int listener(char * nameOfFifo){
 		    	}
 		    }
 		    else{
-		    	sleep(1);
+		    	fprintf(stderr,"else den çıktı\n");
+		    	sleep(5);
 		        break;
 		    }
 		    ++i;
+		    fprintf(stderr,"%d\n",i);
 		}
 		/*If the message coming from aclient waiting for math server*/
 		if(flag == 1){
@@ -87,6 +98,7 @@ int listener(char * nameOfFifo){
 			newFifoName[strlen(newFifoName)-1]='\0';
 			strcat(newFifoName,"_fifo\n");
 
+			fprintf(stderr,"fifo name%sg%d\n",newFifoName,operationNumber);
 			sleep(1);
 
 			close(mainFifo);
@@ -133,6 +145,8 @@ int listener(char * nameOfFifo){
 int operation(char * fifoName,int operationNumber){
 	int status;
 
+	fprintf(stderr,"operat %s %d\n",fifoName,operationNumber);
+
 	if(operationNumber == 1)
 		status=Operation1(fifoName);
 	else if(operationNumber == 2)
@@ -159,295 +173,8 @@ int Operation1(char * fifoName){
 	int variable1,variable2,variable3,fifoToClient,waitTime,i=0,space,flag=0;
 	char message[120];
 
+	fprintf(stderr,"q%sq\n",fifoName);
 
-    sleep(1);
-    fifoToClient = open(fifoName,O_RDONLY);
-
-    if(fifoToClient == -1)
-    	perror("Error at opening Operation1: ");
-
-    while(flag == 0){
-		while(1){
-
-		    if (read(fifoToClient, &message[i] ,1) != 0)
-		    {
-
-		    }
-		    else
-		        break;
-
-		    if(message[i] == '\n'){
-
-		    	/*Checks the messages for is this for server*/
-		        if(strncmp(message,"Math ",strlen("Math ")) == 0){
-		        	message[i] ='\0';	        	
-		        	break;
-		        }
-		        if(strncmp(message,"kill\n",strlen("kill\n")) == 0){
-		        		flag = 1;
-		        		break;
-		        }
-
-		        /*If this message not for Math server writes messages back to fifo*/
-		        else{
-		        	close(fifoToClient);
-		        	fifoToClient = open(fifoName,O_WRONLY);
-		        	message[i+1] ='\0';
-
-		        	write(fifoToClient,message,strlen(message));
-
-		        	close(fifoToClient);
-		        	fifoToClient = open(fifoName,O_RDONLY);
-		        }
-		        i = -1;
-		    }
-		    ++i;
-		}
-		
-		if(flag == 0){
-			/*If the message coming from a client waiting result from math server*/
-			waitTime = atoi(&message[strlen("Math -")]);
-			
-			for(i=0; message[i] != '\0';++i){
-				if(message[i] == ' ')
-					++space;
-				if(space == 1)
-					variable1 = atoi(&message[i+2]);
-				if(space == 2)
-					variable2 = atoi(&message[i+2]);
-				if(space == 3)
-					variable3 = atoi(&message[i+2]);
-			}
-
-			close(fifoToClient);
-			fifoToClient = open(fifoName,O_WRONLY);
-
-			if(variable3 == 0){
-				write(fifoToClient,"Divison by zero\n",strlen("Division by zero\n"));
-				continue;
-			}
-
-			sleep(waitTime);
-			result = sqrt(pow(variable1,2) + pow(variable2,2))/fabs(variable3);
-
-			sprintf(message,"%lf %d\n",result,getpid());
-			write(fifoToClient,message,strlen(message));
-
-			sleep(1);
-
-			close(fifoToClient);
-			fifoToClient = open(fifoName, O_RDONLY);
-			sleep(2);
-		}
-		i=0;
-	}
-
-	close(fifoToClient);
-	return 0;
-}
-
-
-/**
-* This function make predefined operation as sqrt(a+b)
-* Return: returns 0 incase success -1 for sum of variables lesser than zero
-*/
-int Operation2(char * fifoName){
-	double result;
-	int variable1,variable2,fifoToClient,waitTime,i=0,space,flag=0;
-	char message[120];
-
-	sleep(1);
-    fifoToClient = open(fifoName,O_RDONLY);
-
-    if(fifoToClient == -1)
-    	perror("Error at opening Operation1: ");
-
-    while(flag == 0){
-		while(1){
-
-		    if (read(fifoToClient, &message[i] ,1) != 0)
-		    {
-		        printf(" %c",message[i]);
-		    }
-		    else
-		        break;
-
-		    if(message[i] == '\n'){
-
-		    	/*Checks the messages for is this for server*/
-		        if(strncmp(message,"Math ",strlen("Math ")) == 0){
-		        	message[i] ='\0';       	
-		        	break;
-		        }
-		        if(strncmp(message,"kill\n",strlen("kill\n")) == 0){
-		        		flag = 1;
-		        		break;
-		        }
-
-		        /*If this message not for Math server writes messages back to fifo*/
-		        else{
-		        	close(fifoToClient);
-		        	fifoToClient = open(fifoName,O_WRONLY);
-		        	message[i+1] ='\0';
-
-		        	write(fifoToClient,message,strlen(message));
-
-		        	close(fifoToClient);
-		        	fifoToClient = open(fifoName,O_RDONLY);
-		        }
-		        i = -1;
-		    }
-		    ++i;
-		}
-		
-		if(flag == 0){
-
-			/*If the message coming from a client waiting result from math server*/
-			waitTime = atoi(&message[strlen("Math -")]);
-			
-			for(i=0; message[i] != '\0';++i){
-				if(message[i] == ' ')
-					++space;
-				if(space == 1)
-					variable1 = atoi(&message[i+3]);
-				if(space == 2)
-					variable2 = atoi(&message[i+3]);
-			}
-
-			close(fifoToClient);
-			fifoToClient = open(fifoName,O_WRONLY);
-
-			sleep(waitTime);
-			if(variable1 + variable2 < 0){
-				write(fifoToClient,"sum of parameters is negative\n",strlen("sum of parameters is negative\n"));
-				continue;
-			}
-
-			result = sqrt(variable1 + variable2);
-
-
-			sprintf(message,"%lf\n",result);
-			write(fifoToClient,message,strlen(message));
-
-			sleep(1);
-
-			close(fifoToClient);
-			fifoToClient = open(fifoName, O_RDONLY);
-		}
-		
-		i=0;
-	}
-
-	
-	close(fifoToClient);
-	return 0;
-}
-
-/**
-* This function make predefined operation as roots of a*x^2 +b*x + c
-* Return: returns 0 in case of success -1 for discriminant is lesser than 0
-*/
-int Operation3(char * fifoName){
-	double result;
-	int variable1,variable2,variable3,fifoToClient,waitTime,i=0,space,flag=0;
-	char message[120];
-
-    sleep(1);
-    fifoToClient = open(fifoName,O_RDONLY);
-
-    if(fifoToClient == -1)
-    	perror("Error at opening Operation1: ");
-
-    while(flag == 0){
-		while(1){
-
-		    if (read(fifoToClient, &message[i] ,1) != 0)
-		    {
-		        printf(" %c",message[i]);
-		    }
-		    else
-		        break;
-
-		    if(message[i] == '\n'){
-		    	/*Checks the messages for is this for server*/
-		        if(strncmp(message,"Math ",strlen("Math ")) == 0){
-		        	message[i] ='\0';	
-		        	break;
-		        }
-		        if(strncmp(message,"kill\n",strlen("kill\n")) == 0){
-		        		flag = 1;
-		        		break;
-		        }
-
-		        /*If this message not for Math server writes messages back to fifo*/
-		        else{
-		        	close(fifoToClient);
-		        	fifoToClient = open(fifoName,O_WRONLY);
-		        	message[i+1] ='\0';
-
-		        	write(fifoToClient,message,strlen(message));
-
-		        	close(fifoToClient);
-		        	fifoToClient = open(fifoName,O_RDONLY);
-		        }
-		        i = -1;
-		    }
-		    ++i;
-		}
-		
-		if(flag == 0){
-			/*If the message coming from a client waiting result from math server*/
-			waitTime = atoi(&message[strlen("Math -")]);
-			
-			for(i=0; message[i] != '\0';++i){
-				if(message[i] == ' ')
-					++space;
-				if(space == 1)
-					variable1 = atoi(&message[i+2]);
-				if(space == 2)
-					variable2 = atoi(&message[i+2]);
-				if(space == 3)
-					variable3 = atoi(&message[i+2]);
-			}
-
-			close(fifoToClient);
-			fifoToClient = open(fifoName,O_WRONLY);
-
-			result = variable2 * variable2 - 4 * variable1 * variable3;
-
-			if(result < 0){
-				write(fifoToClient,"Delta lesser than zero\n",strlen("Delta lesser than zero\n"));
-				continue;
-			}
-
-			sleep(waitTime);
-			
-			sprintf(message,"%lf\n",result);
-			write(fifoToClient,message,strlen(message));
-			memset(message,'\0',50);
-
-			sleep(1);
-
-			close(fifoToClient);
-			fifoToClient = open(fifoName, O_RDONLY);
-		}
-		i=0;
-	}
-	
-	close(fifoToClient);
-	return 0;
-}
-
-/**
-* This function make predefined operation as inverse function (a*x + b)/(c*x +d) as string
-* Return: returns 0 incase success -1 for divide by zero
-*/
-int Operation4(char * fifoName){
-	char result[100],temp[25];
-	int variable1,variable2,variable3,variable4,fifoToClient,waitTime,i=0,space,flag=0;
-	char message[120];
-
-    sleep(1);
     fifoToClient = open(fifoName,O_RDONLY);
 
     if(fifoToClient == -1)
@@ -467,11 +194,14 @@ int Operation4(char * fifoName){
 		    	/*Checks the messages for is this for server*/
 		        if(strncmp(message,"Math ",strlen("Math ")) == 0){
 		        	message[i] ='\0';
-		        	break;
-		        }
-		        if(strncmp(message,"kill\n",strlen("kill\n")) == 0){
+		        	fprintf(stderr,"doğru geldi -%s-\n",message );
+		        	if(strncmp(message,"kill",strlen("kill")) == 0){
+		        		fprintf(stderr,"%s\n",message );
+		        		sleep(2);
 		        		flag = 1;
-		        		break;
+		        	}
+		        	sleep(2);
+		        	break;
 		        }
 
 		        /*If this message not for Math server writes messages back to fifo*/
@@ -493,6 +223,317 @@ int Operation4(char * fifoName){
 		if(flag == 0){
 			/*If the message coming from a client waiting result from math server*/
 			waitTime = atoi(&message[strlen("Math -")]);
+			fprintf(stderr,"wait time %d\n",waitTime);
+			
+			for(i=0; message[i] != '\0';++i){
+				if(message[i] == ' ')
+					++space;
+				if(space == 1)
+					variable1 = atoi(&message[i+2]);
+				if(space == 2)
+					variable2 = atoi(&message[i+2]);
+				if(space == 3)
+					variable3 = atoi(&message[i+2]);
+			}
+
+			fprintf(stderr,"-%d %d %d %d-\n",i,variable1,variable2,variable3);
+
+			close(fifoToClient);
+			fifoToClient = open(fifoName,O_WRONLY);
+
+			if(variable3 == 0){
+				write(fifoToClient,"Divison by zero\n",strlen("Division by zero\n"));
+				continue;
+			}
+
+			fprintf(stderr,"wait öncesi \n");
+			sleep(waitTime);
+			result = sqrt(pow(variable1,2) + pow(variable2,2))/fabs(variable3);
+
+			fprintf(stderr,"result %f\n",result);
+
+			sprintf(message,"%lf %d\n",result,getpid());
+			write(fifoToClient,message,strlen(message));
+
+			sleep(1);
+
+			close(fifoToClient);
+			fifoToClient = open(fifoName, O_RDONLY);
+			sleep(2);
+		}
+	}
+	sleep(5);	
+	close(fifoToClient);
+	return 0;
+}
+
+
+/**
+* This function make predefined operation as sqrt(a+b)
+* Return: returns 0 incase success -1 for sum of variables lesser than zero
+*/
+int Operation2(char * fifoName){
+	double result;
+	int variable1,variable2,fifoToClient,waitTime,i=0,space,flag=0;
+	char message[120];
+
+	fprintf(stderr,"q%sq\n",fifoName);
+
+	sleep(1);
+    fifoToClient = open(fifoName,O_RDONLY);
+
+    if(fifoToClient == -1)
+    	perror("Error at opening Operation1: ");
+
+    while(flag == 0){
+		while(1){
+
+		    if (read(fifoToClient, &message[i] ,1) != 0)
+		    {
+		        printf(" %c",message[i]);
+		    }
+		    else
+		        break;
+
+		    if(message[i] == '\n'){
+		  		fprintf(stderr,"Debug1 new line\n");
+
+		    	/*Checks the messages for is this for server*/
+		        if(strncmp(message,"Math ",strlen("Math ")) == 0){
+		        	message[i] ='\0';
+		        	fprintf(stderr,"doğru geldi -%s-\n",message );		        	
+		        	break;
+		        }
+		        if(strncmp(message,"kill\n",strlen("kill\n")) == 0){
+		        		fprintf(stderr,"Debug1 \n");
+		        		flag = 1;
+		        }
+
+		        /*If this message not for Math server writes messages back to fifo*/
+		        else{
+		        	close(fifoToClient);
+		        	fifoToClient = open(fifoName,O_WRONLY);
+		        	message[i+1] ='\0';
+
+		        	write(fifoToClient,message,strlen(message));
+
+		        	close(fifoToClient);
+		        	fifoToClient = open(fifoName,O_RDONLY);
+		        }
+		        i = -1;
+		    }
+		    ++i;
+		}
+		
+		if(flag == 0){
+			fprintf(stderr,"Debug2 \n");
+
+			/*If the message coming from a client waiting result from math server*/
+			waitTime = atoi(&message[strlen("Math -")]);
+			fprintf(stderr,"wait time %d\n",waitTime);
+			
+			for(i=0; message[i] != '\0';++i){
+				if(message[i] == ' ')
+					++space;
+				if(space == 1)
+					variable1 = atoi(&message[i+3]);
+				if(space == 2)
+					variable2 = atoi(&message[i+3]);
+			}
+
+			fprintf(stderr,"-var %d %d %d-\n",i,variable1,variable2);
+
+			close(fifoToClient);
+			fifoToClient = open(fifoName,O_WRONLY);
+
+			fprintf(stderr,"wait öncesi \n");
+			sleep(waitTime);
+			if(variable1 + variable2 < 0){
+				write(fifoToClient,"sum of parameters is negative\n",strlen("sum of parameters is negative\n"));
+				continue;
+			}
+
+			result = sqrt(variable1 + variable2);
+
+			fprintf(stderr,"result %f\n",result);
+
+			sprintf(message,"%lf\n",result);
+			write(fifoToClient,message,strlen(message));
+
+			sleep(1);
+
+			close(fifoToClient);
+			fifoToClient = open(fifoName, O_RDONLY);
+		}
+		
+		fprintf(stderr,"Debug3 \n");
+		i=0;
+	}
+
+	fprintf(stderr,"Debug4 \n");
+	
+	close(fifoToClient);
+	return 0;
+}
+
+/**
+* This function make predefined operation as roots of a*x^2 +b*x + c
+* Return: returns 0 in case of success -1 for discriminant is lesser than 0
+*/
+int Operation3(char * fifoName){
+	double result;
+	int variable1,variable2,variable3,fifoToClient,waitTime,i=0,space,flag=0;
+	char message[120];
+
+	fprintf(stderr,"q%sq\n",fifoName);
+
+    fifoToClient = open(fifoName,O_RDONLY);
+
+    if(fifoToClient == -1)
+    	perror("Error at opening Operation1: ");
+
+    while(flag == 0){
+		while(1){
+
+		    if (read(fifoToClient, &message[i] ,1) != 0)
+		    {
+		        printf(" %c",message[i]);
+		    }
+		    else
+		        break;
+
+		    if(message[i] == '\n'){
+		    	/*Checks the messages for is this for server*/
+		        if(strncmp(message,"Math ",strlen("Math ")) == 0){
+		        	message[i] ='\0';
+		        	fprintf(stderr,"doğru geldi -%s-\n",message );
+		        	if(strncmp(message,"kill",strlen("kill")) == 0)
+		        		flag = 1;
+		        	
+		        	break;
+		        }
+
+		        /*If this message not for Math server writes messages back to fifo*/
+		        else{
+		        	close(fifoToClient);
+		        	fifoToClient = open(fifoName,O_WRONLY);
+		        	message[i+1] ='\0';
+
+		        	write(fifoToClient,message,strlen(message));
+
+		        	close(fifoToClient);
+		        	fifoToClient = open(fifoName,O_RDONLY);
+		        }
+		        i = -1;
+		    }
+		    ++i;
+		}
+		
+		if(flag == 0){
+			/*If the message coming from a client waiting result from math server*/
+			waitTime = atoi(&message[strlen("Math -")]);
+			fprintf(stderr,"wait time %d\n",waitTime);
+			
+			for(i=0; message[i] != '\0';++i){
+				if(message[i] == ' ')
+					++space;
+				if(space == 1)
+					variable1 = atoi(&message[i+2]);
+				if(space == 2)
+					variable2 = atoi(&message[i+2]);
+				if(space == 3)
+					variable3 = atoi(&message[i+2]);
+			}
+
+			fprintf(stderr,"-%d %d %d %d-\n",i,variable1,variable2,variable3);
+
+			close(fifoToClient);
+			fifoToClient = open(fifoName,O_WRONLY);
+
+			result = variable2 * variable2 - 4 * variable1 * variable3;
+
+			if(result < 0){
+				write(fifoToClient,"Delta lesser than zero\n",strlen("Delta lesser than zero\n"));
+				continue;
+			}
+
+			fprintf(stderr,"wait öncesi \n");
+			sleep(waitTime);
+			
+			fprintf(stderr,"result %f\n",result);
+
+			sprintf(message,"%lf\n",result);
+			write(fifoToClient,message,strlen(message));
+			memset(message,'\0',50);
+
+			sleep(1);
+
+			close(fifoToClient);
+			fifoToClient = open(fifoName, O_RDONLY);
+		}
+	}
+	
+	close(fifoToClient);
+	return 0;
+}
+
+/**
+* This function make predefined operation as inverse function (a*x + b)/(c*x +d) as string
+* Return: returns 0 incase success -1 for divide by zero
+*/
+int Operation4(char * fifoName){
+	char result[100],temp[25];
+	int variable1,variable2,variable3,variable4,fifoToClient,waitTime,i=0,space,flag=0;
+	char message[120];
+
+	fprintf(stderr,"q%sq\n",fifoName);
+
+    fifoToClient = open(fifoName,O_RDONLY);
+
+    if(fifoToClient == -1)
+    	perror("Error at opening Operation1: ");
+
+    while(flag == 0){
+		while(1){
+
+		    if (read(fifoToClient, &message[i] ,1) != 0)
+		    {
+		        printf(" %c",message[i]);
+		    }
+		    else
+		        break;
+
+		    if(message[i] == '\n'){
+		    	/*Checks the messages for is this for server*/
+		        if(strncmp(message,"Math ",strlen("Math ")) == 0){
+		        	message[i] ='\0';
+		        	fprintf(stderr,"doğru geldi -%s-\n",message );
+		        	if(strncmp(message,"kill",strlen("kill")) == 0)
+		        		flag = 1;
+		        	
+		        	break;
+		        }
+
+		        /*If this message not for Math server writes messages back to fifo*/
+		        else{
+		        	close(fifoToClient);
+		        	fifoToClient = open(fifoName,O_WRONLY);
+		        	message[i+1] ='\0';
+
+		        	write(fifoToClient,message,strlen(message));
+
+		        	close(fifoToClient);
+		        	fifoToClient = open(fifoName,O_RDONLY);
+		        }
+		        i = -1;
+		    }
+		    ++i;
+		}
+		
+		if(flag == 0){
+			/*If the message coming from a client waiting result from math server*/
+			waitTime = atoi(&message[strlen("Math -")]);
+			fprintf(stderr,"wait time %d\n",waitTime);
 			
 			for(i=0; message[i] != '\0';++i){
 				if(message[i] == ' ')
@@ -506,6 +547,8 @@ int Operation4(char * fifoName){
 				if(space == 4)
 					variable4 = atoi(&message[i+2]);
 			}
+
+			fprintf(stderr,"-%d %d %d %d-\n",i,variable1,variable2,variable3);
 
 			close(fifoToClient);
 			fifoToClient = open(fifoName,O_WRONLY);
@@ -533,7 +576,10 @@ int Operation4(char * fifoName){
 				continue;
 			}
 
+			fprintf(stderr,"wait öncesi \n");
 			sleep(waitTime);
+
+			fprintf(stderr,"result %s\n",result);
 
 			write(fifoToClient,result,strlen(result));
 
@@ -542,7 +588,6 @@ int Operation4(char * fifoName){
 			close(fifoToClient);
 			fifoToClient = open(fifoName, O_RDONLY);
 		}
-		i=0;
 	}
 	
 	close(fifoToClient);
