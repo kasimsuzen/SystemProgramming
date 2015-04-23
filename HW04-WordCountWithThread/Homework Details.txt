@@ -1,0 +1,10 @@
+This homework have same conditions as Homework 2 but this will use thread instead of processes
+
+Program will search recursively into levels of directories and count words in each file and print result individually.
+For each directory and file a thread will create and that thread will do the counting
+If there is a non-character in word such as numbers, spelling marks etc. word will not count but spelling marks at end of the word is eligible to count
+Prints example output is:
+ThreadID countResult "relative path to execution"
+
+usage:
+wordCount -directoryName
