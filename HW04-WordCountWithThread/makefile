@@ -3,7 +3,7 @@ CFLAGS=-c -Wall
 LDFLAGS= -pthread
 SOURCES=wordCountThread.c
 OBJECTS=$(SOURCES:.c=.o)
-EXECUTABLE=wordCountThreads.e
+EXECUTABLE=wordCountThread.e
 
 all: $(SOURCES) $(EXECUTABLE)
     
