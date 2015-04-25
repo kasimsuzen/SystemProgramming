@@ -54,30 +54,46 @@ void usageError(){
 void crawler(char *rootDirectory){
 	pid_t pid,* pids;
 
-	int  i,count=0,currentPid=0,numberOfSubdirectories=0,status,allocatedSpace,numberOfFile=0;
+	int  i,pidCount=0,count=0,numberOfSubdirectories=0,status,numberOfFile=0;
 	DIR *dp;
 	struct dirent *ep;
-	char ** itemList;
+	char ** dirList,**fileList;
 
 	dp = opendir(rootDirectory); 
 	/* open directory and count all elements inside directory include parent('..') and current directory('.') symbol */
 	if (dp != NULL)
 	{
-		for (count=0;ep = readdir (dp);++count);
+		for (count=0;ep = readdir (dp);++count){
+			
+			if(ep->d_type == DT_DIR && strcmp(".",ep->d_name) != 0 && strcmp("..",ep->d_name) != 0)
+				++numberOfSubdirectories;
+			
+			if(ep->d_type == DT_REG)
+				++numberOfFile;
+		}
 
 		(void) closedir(dp);
 	}
 	else
 		perror ("Couldn't open the directory");
-	allocatedSpace = count;
-	itemList= malloc(count*sizeof(char*));
 
-	for(i=0 ;i < count;++i)
-		itemList[i]= malloc(PATH_MAX*sizeof(char));
-
+	/* Allocations for file and directory list */
+	if(numberOfFile != 0){
+		fileList = malloc(numberOfFile * sizeof(char*));
+		
+		for(i=0 ;i < numberOfFile;++i)
+			fileList[i]= malloc(PATH_MAX*sizeof(char));
+	}
+	
+	if(numberOfSubdirectories != 0){
+		dirList = malloc(numberOfSubdirectories * sizeof(char*));
+	
+		for(i=0 ;i < numberOfSubdirectories;++i)
+			dirList[i]= malloc(PATH_MAX*sizeof(char));
+	}
+	
 	/* allocate pid numbers for each directory and file -2 here for . and .. (current and parent directory symbols) */
 	pids = malloc((count - 2)*sizeof(pid_t));
-
 	dp = opendir(rootDirectory);
 
 	if(dp != NULL){
@@ -87,43 +103,47 @@ void crawler(char *rootDirectory){
 
 			/* if readed element is directory this function will call itself with this directory */
 			if(ep->d_type == DT_DIR && strcmp(".",ep->d_name) != 0 && strcmp("..",ep->d_name) != 0){
-					++numberOfSubdirectories;
 
-				if( (pids[numberOfSubdirectories] = fork()) < 0 ){
+				if( (pids[pidCount] = fork()) < 0 ){
 					perror("New process could not created this program will be abort\n");
 					abort();
 				}
 
-				if(pids[numberOfSubdirectories] == 0){
+				if(pids[pidCount] == 0){
+					///*editing directory name for calling crawler function */
+					strcpy(dirList[pidCount],rootDirectory);
+					strcat(dirList[pidCount],"/");
+					strcat(dirList[pidCount],ep->d_name);
 
-					/*editing directory name for calling crawler function*/
-					strcpy(itemList[count],rootDirectory);
-					strcat(itemList[count],"/");
-					strcat(itemList[count],ep->d_name);
+					crawler(dirList[pidCount]);
 
-					crawler(itemList[count]);
 					exit(0);
 
 				}
+				++pidCount;
+
 			}
 
 			/* if founded element is not directory it can only be file so name will edit */
-			else if(strcmp(ep->d_name,".") != 0 && strcmp(ep->d_name,"..") != 0){
-                strcpy(itemList[count],rootDirectory);
-                strcat(itemList[count],"/");
-                strcat(itemList[count],ep->d_name);
-                ++numberOfFile;
+			if(ep->d_type == DT_REG && strcmp(ep->d_name,".") != 0 && strcmp(ep->d_name,"..") != 0){
+                strcpy(fileList[count - pidCount],rootDirectory);
+                strcat(fileList[count - pidCount],"/");
+                strcat(fileList[count - pidCount],ep->d_name);
             }
-
+			
+			/* Count variable will increase when . .. readed but should not increade because for this there will be process creation */
+			if(strcmp(ep->d_name,".") == 0 || strcmp(ep->d_name,"..") == 0){
+				--count;
+			}
         }
-
         (void)closedir(dp);
     }
     else
         perror ("Couldn't open the directory");
 
     /* Start new process for founded files. */
-    for (i = currentPid; i < count; ++i)
+    count = 0;
+    for (i = pidCount ; i <  pidCount + numberOfFile ; ++i)
     {
 
         if ((pids[i] = fork()) < 0)
@@ -133,29 +153,40 @@ void crawler(char *rootDirectory){
         }
         else if (pids[i] == 0)
         {
-            if(strcmp(itemList[i],".") != 0 && strcmp(itemList[i],"..") != 0)
+            if(strcmp(fileList[count],".") != 0 && strcmp(fileList[count],"..") != 0)
             {
-                resultPrinter(itemList[i],counter(itemList[i]));
+                resultPrinter(fileList[count],counter(fileList[count]));
             }
             exit(0);
         }
+        ++count;
     }
 
-    printf("%d process created for %d subdirectories and %d files of %s\n",count-2,numberOfSubdirectories,numberOfFile,rootDirectory);
+    printf("%d process created for %d subdirectories and %d files of %s\n",numberOfSubdirectories + numberOfFile,numberOfSubdirectories,numberOfFile,rootDirectory);
 
 
     /* Wait for children to exit. */
-    for(i=0;count > i;++i)
+    for(i=0;numberOfFile + numberOfSubdirectories > i;++i)
     {
         pid = wait(&status);
     }
 
     free(pids);
 
-    for(i=0; i < allocatedSpace;++i)
-        free(itemList[i]);
+    if(numberOfSubdirectories != 0){
+	    for(i=0; i < numberOfSubdirectories;++i)
+	        free(dirList[i]);
 
-    free(itemList);
+	    free(dirList);
+	}
+
+    if(numberOfFile != 0){
+	    for(i=0; i < numberOfFile;++i)
+	        free(fileList[i]);
+
+	    free(fileList);
+	}
+	
 }
 
 void resultPrinter(char * pathOfDirectory,int founded){
