@@ -12,13 +12,22 @@
 #include <sys/wait.h>
 #include <linux/limits.h>
 
+int countOfFiles;
+int countOfSubdirectories;
+int sizeOfFoundData;
+int indexOfFoundData;
+char ** foundData;
+
+pthread_mutex_t mainMutex;
+
 void usageError();
 int isAlpha(char key);
 void * counter(void * data);
 void * crawler(void * rootDirectoryName);
+void resultPrinter(char * directoryName);
 
 int main(int argc,char ** argv){
-
+	int i;
 	DIR *dp;
 	char * initialDirName;
 
@@ -32,12 +41,30 @@ int main(int argc,char ** argv){
 	}
 
 	closedir(dp);
+	/* Initialization global values */
+	countOfFiles = 0;
+	countOfSubdirectories = 0;
+	sizeOfFoundData = 100;
+	indexOfFoundData = 0;
+
+	foundData = malloc(sizeof(char*)*sizeOfFoundData);
+
+	for(i = 0; i < sizeOfFoundData;++i)
+		foundData[i] = malloc(sizeof(char)*PATH_MAX);
 
 	initialDirName = malloc(PATH_MAX * sizeof(char));
 	strcpy(initialDirName,argv[1]);
+
 	crawler((void*)initialDirName);
 
+	resultPrinter(initialDirName);
+
 	free(initialDirName);
+
+	for(i = 0; i < sizeOfFoundData;++i)
+		free(foundData[i]);
+
+	free(foundData);
 
 	return(0);
 }
@@ -47,7 +74,7 @@ int main(int argc,char ** argv){
 */
 void usageError(){
 	fprintf(stderr,"Wrong call, should be as:\n");
-	fprintf(stderr,"./wordCount -directoryName\n");
+	fprintf(stderr,"./wordCount directoryName\n");
 	exit(-1);
 }
 
@@ -158,7 +185,12 @@ void * crawler(void  *rootDirectoryName){
         ++count;
     }
 
-    printf("%d process created for %d subdirectories and %d files of %s\n",numberOfSubdirectories + numberOfFile,numberOfSubdirectories,numberOfFile,rootDirectory);
+	pthread_mutex_lock(&mainMutex);
+
+	countOfFiles = countOfFiles + numberOfFile;
+	countOfSubdirectories = countOfSubdirectories + numberOfSubdirectories;
+
+	pthread_mutex_unlock(&mainMutex);
 
     /* Wait for children to exit. */
     for(i=0;numberOfFile + numberOfSubdirectories > i;++i)
@@ -224,8 +256,30 @@ void *counter(void * data){
 		}
 	}
 	fclose(input);
-	fprintf(stderr,"%ld numbered thread found %d words at %s\n",pthread_self(),numberOfWords,fileName);
+	pthread_mutex_lock(&mainMutex);
+	if(indexOfFoundData >= sizeOfFoundData){
+		sizeOfFoundData = sizeOfFoundData * 2;
+		foundData = realloc(foundData,sizeof(char*)*sizeOfFoundData);
+	}
 
+	if(indexOfFoundData < sizeOfFoundData){
+		sprintf(foundData[indexOfFoundData],"%ld numbered thread found %d words at %s\n",pthread_self(),numberOfWords,fileName);
+		++indexOfFoundData;
+	}
+
+	pthread_mutex_unlock(&mainMutex);
+}
+
+/**
+* Prints result of search and count
+* @param: Directory name that search begin
+*/
+void resultPrinter(char *directoryName) {
+	int i;
+	for(i = 0; i < indexOfFoundData; ++i)
+		fprintf(stderr,"%s",foundData[i]);
+
+	fprintf(stderr,"Total thread created is %d number of file is %d number of subdirectories is %d under %s\n",countOfSubdirectories+countOfFiles,countOfFiles,countOfSubdirectories,directoryName);
 }
 
 
