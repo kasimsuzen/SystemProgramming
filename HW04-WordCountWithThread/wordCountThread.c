@@ -9,7 +9,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <pthread.h>
-#include <sys/wait.h>
+#include <time.h>
+#include <sys/time.h>
 #include <linux/limits.h>
 
 int countOfFiles;
@@ -229,6 +230,10 @@ void *counter(void * data){
 	FILE * input;
 	int flag=1,flagForExtraSpace=0,numberOfWords=0;
 	char temp,fileName[PATH_MAX];
+	struct timeval start, end;
+	long  seconds, useconds;
+
+	gettimeofday(&start, NULL);
 
 	strcpy(fileName,(char*)data);
 
@@ -255,6 +260,11 @@ void *counter(void * data){
 			flag = 1; /* reset flag because of space or new line*/
 		}
 	}
+
+	gettimeofday(&end, NULL);
+	seconds  = end.tv_sec  - start.tv_sec;
+	useconds = end.tv_usec - start.tv_usec;
+
 	fclose(input);
 	pthread_mutex_lock(&mainMutex);
 	if(indexOfFoundData >= sizeOfFoundData){
@@ -263,7 +273,7 @@ void *counter(void * data){
 	}
 
 	if(indexOfFoundData < sizeOfFoundData){
-		sprintf(foundData[indexOfFoundData],"%ld numbered thread found %d words at %s\n",pthread_self(),numberOfWords,fileName);
+		sprintf(foundData[indexOfFoundData],"%ld numbered thread found %d words at %s in %ld second %lu nanosecond\n",pthread_self(),numberOfWords,fileName,seconds,useconds);
 		++indexOfFoundData;
 	}
 
@@ -281,7 +291,6 @@ void resultPrinter(char *directoryName) {
 
 	fprintf(stderr,"Total thread created is %d number of file is %d number of subdirectories is %d under %s\n",countOfSubdirectories+countOfFiles,countOfFiles,countOfSubdirectories,directoryName);
 }
-
 
 /**
 * Checks is character alphabetic return 1 for true 0 for not alphabetic
