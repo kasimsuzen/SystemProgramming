@@ -1,6 +1,6 @@
 /**
 * This code written by Kasım Süzen at 24 March 2015
-* This is a wc(word count) like program which is wrote for CSE 244's second homework 
+* This is a wc(word count) like program which is wrote for CSE 244's fourth homework 
 */
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,19 +8,19 @@
 #include <dirent.h>
 #include <string.h>
 #include <unistd.h>
-#include <sys/types.h>
+#include <pthread.h>
 #include <sys/wait.h>
 #include <linux/limits.h>
 
 void usageError();
 int isAlpha(char key);
-int counter(char * fileName);
-void crawler(char *rootDirectory);
-void resultPrinter(char * pathOfDirectory,int founded);
+void * counter(void * data);
+void * crawler(void * rootDirectoryName);
 
 int main(int argc,char ** argv){
 
 	DIR *dp;
+	char * initialDirName;
 
 	if(argc != 2)
 		usageError();
@@ -33,7 +33,11 @@ int main(int argc,char ** argv){
 
 	closedir(dp);
 
-	crawler(argv[1]);
+	initialDirName = malloc(PATH_MAX * sizeof(char));
+	strcpy(initialDirName,argv[1]);
+	crawler((void*)initialDirName);
+
+	free(initialDirName);
 
 	return(0);
 }
@@ -51,13 +55,15 @@ void usageError(){
 * This function will crawl through and into directories and their subdirectories
 * @param: name of the root directory which search will begin
 */
-void crawler(char *rootDirectory){
-	pid_t pid,* pids;
+void * crawler(void  *rootDirectoryName){
+	pthread_t * thread;
 
-	int  i,pidCount=0,count=0,numberOfSubdirectories=0,status,numberOfFile=0;
+	int  i,threadCount=0,count=0,numberOfSubdirectories=0,numberOfFile=0,control;
 	DIR *dp;
 	struct dirent *ep;
-	char ** dirList,**fileList;
+	char ** dirList,**fileList,rootDirectory[PATH_MAX];
+
+	strcpy(rootDirectory,(char*)rootDirectoryName);
 
 	dp = opendir(rootDirectory); 
 	/* open directory and count all elements inside directory include parent('..') and current directory('.') symbol */
@@ -78,7 +84,7 @@ void crawler(char *rootDirectory){
 		perror ("Couldn't open the directory");
 
 	/* Allocations for file and directory list */
-	if(numberOfFile != 0){
+	if(0 != numberOfFile){
 		fileList = malloc(numberOfFile * sizeof(char*));
 		
 		for(i=0 ;i < numberOfFile;++i)
@@ -91,47 +97,41 @@ void crawler(char *rootDirectory){
 		for(i=0 ;i < numberOfSubdirectories;++i)
 			dirList[i]= malloc(PATH_MAX*sizeof(char));
 	}
-	
+
 	/* allocate pid numbers for each directory and file -2 here for . and .. (current and parent directory symbols) */
-	pids = malloc((count - 2)*sizeof(pid_t));
+	thread = malloc((count - 2)*sizeof(pthread_t));
 	dp = opendir(rootDirectory);
 
 	if(dp != NULL){
 		
-		/* start from beginnig of the directory and search till the end of directory pointer */ 
+		/* start from beginning of the directory and search till the end of directory pointer */
 		for (count=0;ep = readdir (dp);++count){
 
 			/* if readed element is directory this function will call itself with this directory */
 			if(ep->d_type == DT_DIR && strcmp(".",ep->d_name) != 0 && strcmp("..",ep->d_name) != 0){
 
-				if( (pids[pidCount] = fork()) < 0 ){
-					perror("New process could not created this program will be abort\n");
-					abort();
+				/*editing directory name for calling crawler function */
+				strcpy(dirList[threadCount],rootDirectory);
+				strcat(dirList[threadCount],"/");
+				strcat(dirList[threadCount],ep->d_name);
+
+				//fprintf(stderr,"%s gidilecek yer %ld \n",dirList[threadCount],pthread_self());
+				control = pthread_create(&thread[threadCount], NULL, crawler, (void *)dirList[threadCount]);
+				if (control) {
+					printf("ERROR; return code from pthread_create() is %d\n", control);
+					exit(-1);
 				}
-
-				if(pids[pidCount] == 0){
-					///*editing directory name for calling crawler function */
-					strcpy(dirList[pidCount],rootDirectory);
-					strcat(dirList[pidCount],"/");
-					strcat(dirList[pidCount],ep->d_name);
-
-					crawler(dirList[pidCount]);
-
-					exit(0);
-
-				}
-				++pidCount;
-
+				++threadCount;
 			}
 
 			/* if founded element is not directory it can only be file so name will edit */
 			if(ep->d_type == DT_REG && strcmp(ep->d_name,".") != 0 && strcmp(ep->d_name,"..") != 0){
-                strcpy(fileList[count - pidCount],rootDirectory);
-                strcat(fileList[count - pidCount],"/");
-                strcat(fileList[count - pidCount],ep->d_name);
+                strcpy(fileList[count - threadCount],rootDirectory);
+                strcat(fileList[count - threadCount],"/");
+                strcat(fileList[count - threadCount],ep->d_name);
             }
 			
-			/* Count variable will increase when . .. readed but should not increade because for this there will be process creation */
+			/* Count variable will increase when . .. readed but should not increade because for this there will be thread creation */
 			if(strcmp(ep->d_name,".") == 0 || strcmp(ep->d_name,"..") == 0){
 				--count;
 			}
@@ -143,35 +143,34 @@ void crawler(char *rootDirectory){
 
     /* Start new process for founded files. */
     count = 0;
-    for (i = pidCount ; i <  pidCount + numberOfFile ; ++i)
+    for (i = threadCount ; i <  threadCount + numberOfFile ; ++i)
     {
 
-        if ((pids[i] = fork()) < 0)
-        {
-			perror("New process could not created this program will be abort\n");
-            abort();
-        }
-        else if (pids[i] == 0)
-        {
-            if(strcmp(fileList[count],".") != 0 && strcmp(fileList[count],"..") != 0)
-            {
-                resultPrinter(fileList[count],counter(fileList[count]));
-            }
-            exit(0);
-        }
+		if(strcmp(fileList[count],".") != 0 && strcmp(fileList[count],"..") != 0)
+		{
+			control = pthread_create(&thread[i], NULL, counter, (void *)(fileList[count]));
+			if (control) {
+				printf("ERROR; return code from pthread_create() is %d\n", control);
+				exit(-1);
+			}
+		}
+
         ++count;
     }
 
     printf("%d process created for %d subdirectories and %d files of %s\n",numberOfSubdirectories + numberOfFile,numberOfSubdirectories,numberOfFile,rootDirectory);
 
-
     /* Wait for children to exit. */
     for(i=0;numberOfFile + numberOfSubdirectories > i;++i)
     {
-        pid = wait(&status);
+		control = pthread_join(thread[i], NULL);
+		if (control) {
+			printf("ERROR; return code from pthread_join() is %d\n", control);
+			exit(-1);
+		}
     }
 
-    free(pids);
+    free(thread);
 
     if(numberOfSubdirectories != 0){
 	    for(i=0; i < numberOfSubdirectories;++i)
@@ -189,35 +188,33 @@ void crawler(char *rootDirectory){
 	
 }
 
-void resultPrinter(char * pathOfDirectory,int founded){
-	fprintf(stderr,"%d numbered process founded %d word at %s \n",getpid(),founded,pathOfDirectory);
-}
-
 /**
 * Counts word in the file which given only word counts are consist only alphabetic characters
 * @param: input file name for file
 * return counted words number
 */
-int counter(char * fileName){
+void *counter(void * data){
 	FILE * input;
 	int flag=1,flagForExtraSpace=0,numberOfWords=0;
-	char temp;
+	char temp,fileName[PATH_MAX];
+
+	strcpy(fileName,(char*)data);
 
 	input = fopen(fileName,"r");
-	
+
 	while(!feof(input)){
 		fscanf(input,"%c",&temp);
 
 		if(!isAlpha(temp) && temp != ' ' && temp != '\n'){ /* checking character is alphabetic */
 			flag = 0;
 		}
-		
+
 		if(isAlpha(temp))
 			flagForExtraSpace=0; /* after one alphabetic character read we know a word has ocurred so space flag turned to true */
 
 		/*EOF checked because if there is no space or new line character between eof and last character of word */
 		if(temp == ' ' || temp == '\n' || feof(input)){
-			
+
 			if(flag == 1 && flagForExtraSpace ==0){ /* if flag equals to 1 characters between previos space and current are alphabetic words so increase word founded */
 				++numberOfWords;
 				flagForExtraSpace = 1;
@@ -227,7 +224,8 @@ int counter(char * fileName){
 		}
 	}
 	fclose(input);
-	return numberOfWords;
+	fprintf(stderr,"%ld numbered thread found %d words at %s\n",pthread_self(),numberOfWords,fileName);
+
 }
 
 
