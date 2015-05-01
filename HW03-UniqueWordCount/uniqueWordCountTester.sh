@@ -8,4 +8,5 @@ if [ x"$1" = "x" ]; then
         exit 1
 fi
 
-awk '{for(x=1;$x;++x)print $x}' "${1}" | tr "${PUNCT}" "@" | sed 's/@//g' | sort | uniq -c
+awk '{for(x=1;$x;++x)print $x}' "${1}" | tr "${PUNCT}" "@" | sed 's/@//g' | sort | uniq -c > sortedTestOutput 
+grep -c -e [0-9]  sortedTestOutput
