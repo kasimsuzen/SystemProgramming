@@ -37,7 +37,6 @@ int main(int argc,char ** argv){
 	pipe(pipeFilesForWords);
 
 	crawler(argv[1],pipeFilesForWords);
-
 	close(pipeFilesForWords[1]);
 
 	count=logger(pipeFilesForWords[0]);
@@ -64,26 +63,44 @@ void usageError(){
 void crawler(char *rootDirectory,int fileDescriptorsWord[2]){
 	pid_t pid,* pids;
 
-	int  i,count=0,currentPid=0,numberOfSubdirectories=0,status,allocatedSpace,numberOfFile=0;
+	int  i,count=0,pidCount=0,numberOfSubdirectories=0,status,numberOfFile=0;
 	DIR *dp;
 	struct dirent *ep;
-	char ** itemList,dir_number[20];
+	char ** dirList,**fileList,dir_number[PATH_MAX];
+
 
 	dp = opendir(rootDirectory); 
 	/* open directory and count all elements inside directory include parent('..') and current directory('.') symbol */
 	if (dp != NULL)
 	{
-		for (count=0;ep = readdir (dp);++count);
+		for (count=0;ep = readdir (dp);++count){
+			
+			if(ep->d_type == DT_DIR && strcmp(".",ep->d_name) != 0 && strcmp("..",ep->d_name) != 0)
+				++numberOfSubdirectories;
+			
+			if(ep->d_type == DT_REG)
+				++numberOfFile;
+		}
 
 		(void) closedir(dp);
 	}
 	else
 		perror ("Couldn't open the directory");
-	allocatedSpace = count;
-	itemList= malloc(count*sizeof(char*));
 
-	for(i=0 ;i < count;++i)
-		itemList[i]= malloc(PATH_MAX*sizeof(char));
+	/* Allocations for file and directory list */
+	if(numberOfFile != 0){
+		fileList = malloc(numberOfFile * sizeof(char*));
+		
+		for(i=0 ;i < numberOfFile;++i)
+			fileList[i]= malloc(PATH_MAX*sizeof(char));
+	}
+	
+	if(numberOfSubdirectories != 0){
+		dirList = malloc(numberOfSubdirectories * sizeof(char*));
+	
+		for(i=0 ;i < numberOfSubdirectories;++i)
+			dirList[i]= malloc(PATH_MAX*sizeof(char));
+	}
 
 	/* allocate pid numbers for each directory and file -2 here for . and .. (current and parent directory symbols) */
 	pids = malloc((count - 2)*sizeof(pid_t));
@@ -97,32 +114,35 @@ void crawler(char *rootDirectory,int fileDescriptorsWord[2]){
 
 			/* if readed element is directory this function will call itself with this directory */
 			if(ep->d_type == DT_DIR && strcmp(".",ep->d_name) != 0 && strcmp("..",ep->d_name) != 0){
-					++numberOfSubdirectories;
 
-				if( (pids[numberOfSubdirectories] = fork()) < 0 ){
+				if( (pids[pidCount] = fork()) < 0 ){
 					perror("New process could not created this program will be abort\n");
 					abort();
 				}
 
-				if(pids[numberOfSubdirectories] == 0){
+				if(pids[pidCount] == 0){
 
 					/*editing directory name for calling crawler function*/
-					strcpy(itemList[count],rootDirectory);
-					strcat(itemList[count],"/");
-					strcat(itemList[count],ep->d_name);
+					strcpy(dirList[pidCount],rootDirectory);
+					strcat(dirList[pidCount],"/");
+					strcat(dirList[pidCount],ep->d_name);
 
-					crawler(itemList[count],fileDescriptorsWord);
+					crawler(dirList[pidCount],fileDescriptorsWord);
 					exit(0);
-
 				}
 			}
 
 			/* if founded element is not directory it can only be file so name will edit */
-			else if(strcmp(ep->d_name,".") != 0 && strcmp(ep->d_name,"..") != 0){
-				strcpy(itemList[count],rootDirectory);
-				strcat(itemList[count],"/");
-				strcat(itemList[count],ep->d_name);
-				++numberOfFile;
+			if(strcmp(ep->d_name,".") != 0 && strcmp(ep->d_name,"..") != 0){
+				strcpy(fileList[count - pidCount],rootDirectory);
+				strcat(fileList[count - pidCount],"/");
+				strcat(fileList[count - pidCount],ep->d_name);
+			}
+
+
+			/* Count variable will increase when . .. readed but should not increade because for this there will be process creation */
+			if(strcmp(ep->d_name,".") == 0 || strcmp(ep->d_name,"..") == 0){
+				--count;
 			}
 
 		}
@@ -133,7 +153,9 @@ void crawler(char *rootDirectory,int fileDescriptorsWord[2]){
 		perror ("Couldn't open the directory");
 
 	/* Start new process for founded files. */
-	for (i = currentPid; i < count; ++i)
+	count = 0;
+
+	for (i = pidCount; i < pidCount + numberOfFile; ++i)
 	{
 
 		if ((pids[i] = fork()) < 0)
@@ -143,31 +165,43 @@ void crawler(char *rootDirectory,int fileDescriptorsWord[2]){
 		}
 		else if (pids[i] == 0)
 		{
-			if(strcmp(itemList[i],".") != 0 && strcmp(itemList[i],"..") != 0)
+			if(strcmp(fileList[count],".") != 0 && strcmp(fileList[count],"..") != 0)
 			{
 				close(fileDescriptorsWord[0]);
-				counter(itemList[i],fileDescriptorsWord[1]);
+				counter(fileList[count],fileDescriptorsWord[1]);
 				close(fileDescriptorsWord[1]);
 			}
 			exit(0);
 		}
+
+		++count;
 	}
 
+	memset(dir_number,'\0',PATH_MAX);
 	sscanf(dir_number,"! %d %d\n",&numberOfSubdirectories,&numberOfFile);
 	write(fileDescriptorsWord[1],dir_number,strlen(dir_number));
 
 	/* Wait for children to exit. */
-	for(i=0;count > i;++i)
-	{
-		pid = wait(&status);
+    for(i=0;numberOfFile + numberOfSubdirectories > i;++i)
+    {
+        pid = wait(&status);
+    }
+
+    free(pids);
+
+    if(numberOfSubdirectories != 0){
+	    for(i=0; i < numberOfSubdirectories;++i)
+	        free(dirList[i]);
+
+	    free(dirList);
 	}
 
-	free(pids);
+    if(numberOfFile != 0){
+	    for(i=0; i < numberOfFile;++i)
+	        free(fileList[i]);
 
-	for(i=0; i < allocatedSpace;++i)
-		free(itemList[i]);
-
-	free(itemList);
+	    free(fileList);
+	}
 }
 
 /**
@@ -180,6 +214,8 @@ int counter(char * fileName,int fileDescriptor){
 	int flag=1,flagForExtraSpace=0,numberOfWords=0,position=0;
 	char temp,temp_arr[200];
 
+	int lineCount=0;
+
 	input = fopen(fileName,"r");
 	
 	while(!feof(input)){
@@ -189,10 +225,13 @@ int counter(char * fileName,int fileDescriptor){
 			flag = 0;
 		}
 
+		if(temp == '\n'){
+			++lineCount;
+		}
+
 		if(isAlpha(temp) && temp != ' ' && temp != '\n'){
 			temp_arr[position] = temp;
 			++position;
-			//fprintf(stderr,"%c\n",temp );
 		}
 		
 		if(isAlpha(temp))
@@ -210,8 +249,8 @@ int counter(char * fileName,int fileDescriptor){
 				flagForExtraSpace = 1;
 				temp_arr[position] = '\n';
 				temp_arr[position + 1] = '\0';
-				//fprintf(stderr,"%s",temp_arr);
 				write(fileDescriptor,temp_arr,strlen(temp_arr));
+				memset(temp_arr,'\0',200);
 				position=0;
 			}
 
@@ -221,7 +260,6 @@ int counter(char * fileName,int fileDescriptor){
 	fclose(input);
 	return numberOfWords;
 }
-
 
 /**
 * Checks is character alphabetic return 1 for true 0 for not alphabetic
