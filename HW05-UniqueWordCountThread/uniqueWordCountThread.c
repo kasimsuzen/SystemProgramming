@@ -216,7 +216,6 @@ void * crawler(void *rootDirectoryName){
 	}
 
 	gettimeofday(&end, NULL);
-	fprintf(stderr,"start %ld\n  end %ld\n",start.tv_usec,end.tv_usec);
 	seconds  = end.tv_sec  - start.tv_sec;
 	if(seconds > 0){
 		useconds = 1000000 - start.tv_usec + end.tv_usec;
@@ -224,7 +223,7 @@ void * crawler(void *rootDirectoryName){
 
 	if(seconds == 0)
 	useconds = end.tv_usec - start.tv_usec;
-	fprintf(stderr,"tam %s directory searched finished in %ld second and %ld nanosecond\n",rootDirectory,seconds,useconds);
+	fprintf(stderr,"%s directory searched finished in %ld second and %ld nanosecond\n",rootDirectory,seconds,useconds);
 
 	free(thread);
 
