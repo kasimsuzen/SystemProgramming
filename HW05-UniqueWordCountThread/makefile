@@ -1,6 +1,6 @@
 CC=gcc
 CFLAGS=-c -Wall
-LDFLAGS=
+LDFLAGS= -pthread
 SOURCES=uniqueWordCountThread.c
 OBJECTS=$(SOURCES:.c=.o)
 EXECUTABLE=uniqueWordCountThread.e

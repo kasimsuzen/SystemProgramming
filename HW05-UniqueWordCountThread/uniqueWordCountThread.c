@@ -2,6 +2,7 @@
 * This code written by Kasım Süzen at 24 March 2015
 * This is a wc(word count) like program which is wrote for CSE 244's second homework 
 */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
@@ -11,18 +12,38 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <linux/limits.h>
+#include <pthread.h>
+#include <errno.h>
+
 
 void usageError();
 int isAlpha(char key);
-int counter(char * fileName,int fileDescriptor);
-void crawler(char *rootDirectory,int fileDescriptorsWord[2]);
-int logger(int fileDescriptorWords);
+void * counter(void * filePath);
+void * crawler(void *rootDirectoryName);
+void logger();
+
+struct UniqueWords {
+	char * word;
+	int wordCount;
+	struct UniqueWords * next;
+}UniqueWords_t;
+
+int flagForWrite;
+int globalCountOfFiles;
+int globalCountOfSubdirectories;
+int count;
+int bufferIndex;
+int bufferSize;
+char ** buffer;
+
+pthread_t mainThreadID;
+
+pthread_mutex_t resultMutex;
 
 int main(int argc,char ** argv){
 
 	DIR *dp;
-	int count,pipeFilesForWords[2]; /* 0 will use for reading, 1 will use for writing*/ 
-
+	int i;
 	if(argc != 2)
 		usageError();
 
@@ -34,13 +55,20 @@ int main(int argc,char ** argv){
 
 	closedir(dp);
 
-	pipe(pipeFilesForWords);
+	count =0;
+	bufferIndex =0;
+	bufferSize = 100;
+	flagForWrite = 0;
+	buffer = malloc(sizeof(char*)* bufferSize);
 
-	crawler(argv[1],pipeFilesForWords);
-	close(pipeFilesForWords[1]);
+	for(i =0; i < bufferSize; ++i )
+		buffer[i] = malloc(sizeof(char)*256);
 
-	count=logger(pipeFilesForWords[0]);
-	close(pipeFilesForWords[0]);
+	mainThreadID = pthread_self();
+
+	crawler((void*)argv[1]);
+
+	logger();
 
 	fprintf(stderr,"There are %d unique word\n",count);
 
@@ -60,24 +88,27 @@ void usageError(){
 * This function will crawl through and into directories and their subdirectories
 * @param: name of the root directory which search will begin
 */
-void crawler(char *rootDirectory,int fileDescriptorsWord[2]){
-	pid_t pid,* pids;
-
-	int  i,count=0,pidCount=0,numberOfSubdirectories=0,status,numberOfFile=0;
+void * crawler(void *rootDirectoryName){
+	pthread_t * thread;
+	int  i,threadCount=0,count=0,numberOfSubdirectories=0,numberOfFile=0,control;
 	DIR *dp;
 	struct dirent *ep;
-	char ** dirList,**fileList,dir_number[PATH_MAX];
+	char ** dirList,**fileList,rootDirectory[PATH_MAX];
 
+	strcpy(rootDirectory,(char*)rootDirectoryName);
 
-	dp = opendir(rootDirectory); 
+	dp = opendir(rootDirectory);
 	/* open directory and count all elements inside directory include parent('..') and current directory('.') symbol */
 	if (dp != NULL)
 	{
 		for (count=0;ep = readdir (dp);++count){
-			
+
+			if(ep == NULL)
+				perror("Error at readdir ");
+
 			if(ep->d_type == DT_DIR && strcmp(".",ep->d_name) != 0 && strcmp("..",ep->d_name) != 0)
 				++numberOfSubdirectories;
-			
+
 			if(ep->d_type == DT_REG)
 				++numberOfFile;
 		}
@@ -88,65 +119,58 @@ void crawler(char *rootDirectory,int fileDescriptorsWord[2]){
 		perror ("Couldn't open the directory");
 
 	/* Allocations for file and directory list */
-	if(numberOfFile != 0){
+	if(0 != numberOfFile){
 		fileList = malloc(numberOfFile * sizeof(char*));
-		
+
 		for(i=0 ;i < numberOfFile;++i)
 			fileList[i]= malloc(PATH_MAX*sizeof(char));
 	}
-	
+
 	if(numberOfSubdirectories != 0){
 		dirList = malloc(numberOfSubdirectories * sizeof(char*));
-	
+
 		for(i=0 ;i < numberOfSubdirectories;++i)
 			dirList[i]= malloc(PATH_MAX*sizeof(char));
 	}
 
 	/* allocate pid numbers for each directory and file -2 here for . and .. (current and parent directory symbols) */
-	pids = malloc((count - 2)*sizeof(pid_t));
-
+	thread = malloc((count - 2)*sizeof(pthread_t));
 	dp = opendir(rootDirectory);
 
+
 	if(dp != NULL){
-		
-		/* start from beginnig of the directory and search till the end of directory pointer */ 
+
+		/* start from beginning of the directory and search till the end of directory pointer */
 		for (count=0;ep = readdir (dp);++count){
 
 			/* if readed element is directory this function will call itself with this directory */
 			if(ep->d_type == DT_DIR && strcmp(".",ep->d_name) != 0 && strcmp("..",ep->d_name) != 0){
 
-				if( (pids[pidCount] = fork()) < 0 ){
-					perror("New process could not created this program will be abort\n");
-					abort();
+				/*editing directory name for calling crawler function */
+				strcpy(dirList[threadCount],rootDirectory);
+				strcat(dirList[threadCount],"/");
+				strcat(dirList[threadCount],ep->d_name);
+
+				control = pthread_create(&thread[threadCount], NULL, crawler, (void *)dirList[threadCount]);
+				if (control) {
+					printf("ERROR; return code from pthread_create() is %d\n", control);
+					exit(-1);
 				}
-
-				if(pids[pidCount] == 0){
-
-					/*editing directory name for calling crawler function*/
-					strcpy(dirList[pidCount],rootDirectory);
-					strcat(dirList[pidCount],"/");
-					strcat(dirList[pidCount],ep->d_name);
-
-					crawler(dirList[pidCount],fileDescriptorsWord);
-					exit(0);
-				}
+				++threadCount;
 			}
 
 			/* if founded element is not directory it can only be file so name will edit */
-			if(strcmp(ep->d_name,".") != 0 && strcmp(ep->d_name,"..") != 0){
-				strcpy(fileList[count - pidCount],rootDirectory);
-				strcat(fileList[count - pidCount],"/");
-				strcat(fileList[count - pidCount],ep->d_name);
+			if(ep->d_type == DT_REG && strcmp(ep->d_name,".") != 0 && strcmp(ep->d_name,"..") != 0){
+				strcpy(fileList[count - threadCount],rootDirectory);
+				strcat(fileList[count - threadCount],"/");
+				strcat(fileList[count - threadCount],ep->d_name);
 			}
 
-
-			/* Count variable will increase when . .. readed but should not increade because for this there will be process creation */
+			/* Count variable will increase when . .. readed but should not increade because for this there will be thread creation */
 			if(strcmp(ep->d_name,".") == 0 || strcmp(ep->d_name,"..") == 0){
 				--count;
 			}
-
 		}
-
 		(void)closedir(dp);
 	}
 	else
@@ -154,70 +178,75 @@ void crawler(char *rootDirectory,int fileDescriptorsWord[2]){
 
 	/* Start new process for founded files. */
 	count = 0;
-
-	for (i = pidCount; i < pidCount + numberOfFile; ++i)
+	for (i = threadCount ; i <  threadCount + numberOfFile ; ++i)
 	{
 
-		if ((pids[i] = fork()) < 0)
+		if(strcmp(fileList[count],".") != 0 && strcmp(fileList[count],"..") != 0)
 		{
-			perror("New process could not created this program will be abort\n");
-			abort();
-		}
-		else if (pids[i] == 0)
-		{
-			if(strcmp(fileList[count],".") != 0 && strcmp(fileList[count],"..") != 0)
-			{
-				close(fileDescriptorsWord[0]);
-				counter(fileList[count],fileDescriptorsWord[1]);
-				close(fileDescriptorsWord[1]);
+			control = pthread_create(&thread[i], NULL, counter, (void *)(fileList[count]));
+			if (control) {
+				printf("ERROR; return code from pthread_create() is %d\n", control);
+				exit(-1);
 			}
-			exit(0);
 		}
 
 		++count;
 	}
 
-	memset(dir_number,'\0',PATH_MAX);
-	sscanf(dir_number,"! %d %d\n",&numberOfSubdirectories,&numberOfFile);
-	write(fileDescriptorsWord[1],dir_number,strlen(dir_number));
+	pthread_mutex_lock(&resultMutex);
+
+	globalCountOfFiles = globalCountOfFiles + numberOfFile;
+	globalCountOfSubdirectories = globalCountOfSubdirectories + numberOfSubdirectories;
+
+	pthread_mutex_unlock(&resultMutex);
 
 	/* Wait for children to exit. */
-    for(i=0;numberOfFile + numberOfSubdirectories > i;++i)
-    {
-        pid = wait(&status);
-    }
-
-    free(pids);
-
-    if(numberOfSubdirectories != 0){
-	    for(i=0; i < numberOfSubdirectories;++i)
-	        free(dirList[i]);
-
-	    free(dirList);
+	for(i=0;numberOfFile + numberOfSubdirectories > i;++i)
+	{
+		control = pthread_join(thread[i], NULL);
+		if (control) {
+			printf("ERROR; return code from pthread_join() is %d\n", control);
+			exit(-1);
+		}
 	}
 
-    if(numberOfFile != 0){
-	    for(i=0; i < numberOfFile;++i)
-	        free(fileList[i]);
+	free(thread);
 
-	    free(fileList);
+	if(numberOfSubdirectories != 0){
+		for(i=0; i < numberOfSubdirectories;++i)
+			free(dirList[i]);
+
+		free(dirList);
 	}
+
+	if(numberOfFile != 0){
+		for(i=0; i < numberOfFile;++i)
+			free(fileList[i]);
+
+		free(fileList);
+	}
+
+	pthread_mutex_lock(&resultMutex);
+
+	if(pthread_equal(pthread_self(),mainThreadID))
+		flagForWrite = -1;
+
+	pthread_mutex_unlock(&resultMutex);
+
 }
 
 /**
 * Counts word in the file which given only word counts are consist only alphabetic characters
 * @param: input file name for file
-* return counted words number
 */
-int counter(char * fileName,int fileDescriptor){
+void * counter(void * filePath){
 	FILE * input;
-	int flag=1,flagForExtraSpace=0,numberOfWords=0,position=0;
-	char temp,temp_arr[200];
+	int flag=1,flagForExtraSpace=0,position=0,i=0;
+	char temp,temp_arr[200],fileName[PATH_MAX];
 
-	int lineCount=0;
-
+	strcpy(fileName,(char*)filePath);
 	input = fopen(fileName,"r");
-	
+
 	while(!feof(input)){
 		fscanf(input,"%c",&temp);
 
@@ -225,15 +254,11 @@ int counter(char * fileName,int fileDescriptor){
 			flag = 0;
 		}
 
-		if(temp == '\n'){
-			++lineCount;
-		}
-
 		if(isAlpha(temp) && temp != ' ' && temp != '\n'){
 			temp_arr[position] = temp;
 			++position;
 		}
-		
+
 		if(isAlpha(temp))
 			flagForExtraSpace=0; /* after one alphabetic character read we know a word has ocurred so space flag turned to true */
 
@@ -245,20 +270,33 @@ int counter(char * fileName,int fileDescriptor){
 				if(temp_arr[position-1] == '.' || temp_arr[position-1] == ',')
 					--position;
 
-				++numberOfWords;
 				flagForExtraSpace = 1;
-				temp_arr[position] = '\n';
-				temp_arr[position + 1] = '\0';
-				write(fileDescriptor,temp_arr,strlen(temp_arr));
+				temp_arr[position] = '\0';
+
+				pthread_mutex_lock(&resultMutex);
+
+				if(bufferIndex >= bufferSize){
+					bufferSize = bufferSize * 2;
+					buffer = realloc(buffer,sizeof(char*) * bufferSize);
+					for(i =bufferSize / 2; i < bufferSize;++i)
+						buffer[i]=malloc(sizeof(char)*256);
+
+				}
+
+				strcpy(buffer[bufferIndex],temp_arr);
+				++bufferIndex;
+
+				pthread_mutex_unlock(&resultMutex);
+
 				memset(temp_arr,'\0',200);
-				position=0;
+				++i;
 			}
 
+			position=0;
 			flag = 1; /* reset flag because of space or new line*/
 		}
 	}
 	fclose(input);
-	return numberOfWords;
 }
 
 /**
@@ -276,81 +314,76 @@ int isAlpha(char key){
 /**
 * This function read from pipe and writes a log file about each words count
 * @param: fileDescriptorWords reading side of pipe
-* return Returns number of unique words
 */
-int logger(int fileDescriptorWords){
+void logger(){
 
-	char temp[50],buffer[50], temp2[50], ignore;
-	int count,i=0,j=0,flag=0,flagForNewWord=0,uniqueCount=0,subdirectories=0,numberOfFile=0;
 	FILE * logFile;
-	long int point;
+	struct UniqueWords founded,*position;
+	int init=0;
+	founded.next = NULL;
+	founded.wordCount = 0;
+	position = &founded;
+
 	logFile = fopen("logFile","w+");
 
-	memset(temp,'\0',50);
-	
-	while(0 != read(fileDescriptorWords,&temp[i],1) ){
-		//fprintf(stderr,"%c %d",temp[i],i);
+	while(1){
+		pthread_mutex_lock(&resultMutex);
 
-		if(temp[0] == '!'){
-			if(temp[i] == '\n'){
-				strcpy(temp2, temp);
-				sscanf(temp2, "%c", &ignore); 
-				sscanf(temp2, "%c", &ignore);
-				sscanf(temp2, "%d", &j);
-				subdirectories += j;
-				sscanf(temp2, "%c", &ignore);
-				sscanf(temp2, "%d", &j);
-				numberOfFile += j;
-				i=0;
-				continue;
-			}
-			++i;
+		if(flagForWrite == -1 && bufferIndex == 0) {
+			pthread_mutex_unlock(&resultMutex);
+			break;
 		}
 
-		if(temp[i] == '\n'){
-			temp[i] = '\0';
-			//fprintf(stderr, "%s\n", temp);
-			if(flag == 0){
-				//fprintf(stderr, "%s\n", temp);
-				fprintf(logFile,"%s %d\n",temp,1 );
-				//printf("%s should be %d %d \n",temp,count,count-1 );
-				++uniqueCount;
-				flag = 1;
-			}
-			else{
-				while(!feof(logFile)){
-					point=ftell(logFile);
-						//fprintf(stderr, "%d\n", point);
-					fscanf(logFile,"%s",buffer);
-					fscanf(logFile,"%d",&count);
-					//fprintf(stderr,"buf :%s temp:%s i:%d c:%d\n",buffer,temp,i,count);
-
-					if(strcmp(buffer,temp) == 0){
-						fseek(logFile,point+1,SEEK_SET);
-						//fprintf(stderr, "%s\n", temp);
-						fprintf(logFile,"%s %d\n",temp,++count );
-						//printf("%s flag 1 should be %d %d \n",temp,count,count-1 );
-						flagForNewWord=1;
-						break;
-					}
-
-				}
-				if(flagForNewWord == 0){
-					//fprintf(stderr, "%s\n", temp);
-					fprintf(logFile,"%s %d\n",temp,1 );
-					//printf("%s flag 2 should be %d %d \n",temp,count,count-1 );
-					++uniqueCount;
-				}
-			}
-			i=-1;
-			//fprintf(stderr,"rewinded\n\n\n");
+		if(bufferIndex >= 0 && init == 0){
+			founded.word = malloc(sizeof(char) * strlen(buffer[bufferIndex]));
+			strcpy(founded.word,buffer[bufferIndex-1]);
+			++founded.wordCount;
+			--bufferIndex;
+			++count;
 		}
-		flagForNewWord=0;
-		rewind(logFile);
-		++i;
+
+		if(bufferIndex >= 0 && init == 1) {
+			while(strcmp(position->word,buffer[bufferIndex-1])){
+				if(position->next == NULL)
+					break;
+				position=position->next;
+			}
+
+			if(strcmp(position->word,buffer[bufferIndex-1]) == 0){
+				++position->wordCount;
+				--bufferIndex;
+				memset(buffer[bufferIndex],'\0',256);
+
+			}
+
+			else if(position->next == NULL){
+
+				position->next = malloc(sizeof(struct UniqueWords));
+				position = position->next;
+
+				position->wordCount = 1;
+				position->next = NULL;
+
+				position->word = malloc(sizeof(char)*strlen(buffer[bufferIndex-1]));
+				strcpy(position->word,buffer[bufferIndex-1]);
+				--bufferIndex;
+				memset(buffer[bufferIndex],'\0',256);
+				++count;
+			}
+
+		}
+		pthread_mutex_unlock(&resultMutex);
+
+			position = &founded;
+		init = 1;
 	}
 
+	position = &founded;
+
+	while(position->next != NULL){
+		fprintf(logFile,"%s %d\n",position->word,position->wordCount);
+		position = position->next;
+	}
+	fprintf(logFile,"%s %d\n",position->word,position->wordCount);
 	fclose(logFile);
-	
-	return uniqueCount;
 }
