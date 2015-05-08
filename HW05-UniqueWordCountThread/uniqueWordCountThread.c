@@ -1,6 +1,6 @@
 /**
 * This code written by Kasım Süzen at 24 March 2015
-* This is a wc(word count) like program which is wrote for CSE 244's second homework 
+* This is a unique word count program which is wrote for CSE 244's fifth homework
 */
 
 #include <stdio.h>
@@ -223,7 +223,7 @@ void * crawler(void *rootDirectoryName){
 
 	if(seconds == 0)
 	useconds = end.tv_usec - start.tv_usec;
-	fprintf(stderr,"%s directory searched finished in %ld second and %ld nanosecond\n",rootDirectory,seconds,useconds);
+	fprintf(stderr,"%s directory searched finished in %ld second and %ld microsecond\n",rootDirectory,seconds,useconds);
 
 	free(thread);
 
