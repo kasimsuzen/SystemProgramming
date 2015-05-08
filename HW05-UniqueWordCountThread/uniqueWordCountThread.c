@@ -333,8 +333,8 @@ int isAlpha(char key){
 void logger(){
 
 	FILE * logFile;
-	struct UniqueWords founded,*position;
-	int init=0;
+	struct UniqueWords founded,*position,*temp;
+	int init=0,i;
 	founded.next = NULL;
 	founded.wordCount = 0;
 	position = &founded;
@@ -393,6 +393,11 @@ void logger(){
 		init = 1;
 	}
 
+	for(i =0; i < bufferSize; ++i)
+		free(buffer[i]);
+
+	free(buffer);
+
 	position = &founded;
 
 	while(position->next != NULL){
@@ -400,5 +405,18 @@ void logger(){
 		position = position->next;
 	}
 	fprintf(logFile,"%s %d\n",position->word,position->wordCount);
+	i=0;
+	for(position = founded.next; position != NULL ; ){
+		++i;
+		temp = position;
+		free(temp->word);
+		if(position->next != NULL){
+			free(position);
+		}
+		position = temp->next;
+	}
+	free(temp);
+	free(founded.word);
+
 	fclose(logFile);
 }
