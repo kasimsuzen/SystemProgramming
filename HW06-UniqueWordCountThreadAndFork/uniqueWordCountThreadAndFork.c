@@ -21,6 +21,8 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 
+#define WORD_COUNT_LIMIT 100000
+
 void usageError();
 int isAlpha(char key);
 void * counter(void * filePath);
@@ -33,19 +35,15 @@ struct UniqueWords {
 	struct UniqueWords * next;
 }UniqueWords_t;
 
-int flagForWrite;
 int globalCountOfFiles;
 int globalCountOfSubdirectories;
 int count;
-int bufferIndex;
-int bufferSize;
-char ** buffer;
 
 int main(int argc,char ** argv){
 
 	DIR *dp;
-	int i,sem_id;
-	key_t sem_key;
+	int *bufferIndex,sem_id,shmIDIndex;
+	key_t sem_key,shmKeyIndex;
 	struct sembuf sop;
 	if(argc != 2) {
 		usageError();
@@ -60,14 +58,32 @@ int main(int argc,char ** argv){
 	closedir(dp);
 
 	count =0;
-	bufferIndex =0;
-	bufferSize = 100;
-	flagForWrite = 0;
-	buffer = malloc(sizeof(char*)* bufferSize);
+	shmKeyIndex = ftok(".",'I');
 
-	for(i =0; i < bufferSize; ++i ) {
-		buffer[i] = malloc(sizeof(char)*256);
+	if((shmIDIndex = shmget(shmKeyIndex, sizeof(int), IPC_CREAT|IPC_EXCL|0666)) == -1)
+	{
+		printf("Shared memory segment exists - opening as client\n");
+
+		/* Segment probably already exists - try as a client */
+		if((shmIDIndex = shmget(shmKeyIndex, sizeof(int), 0)) == -1)
+		{
+			perror("shmget");
+			exit(1);
+		}
 	}
+	else
+	{
+		printf("Creating new shared memory segment\n");
+	}
+
+	/* Attach (map) the shared memory segment into the current process */
+	if((bufferIndex = (int *)shmat(shmIDIndex, 0, 0)) == (int *)-1)
+	{
+		perror("shmat");
+		exit(1);
+	}
+
+	*bufferIndex = 0;
 
 	sem_key = ftok(".", 42);
 	sem_id = semget(sem_key, 1, IPC_CREAT | IPC_EXCL | 0600);
@@ -88,8 +104,7 @@ int main(int argc,char ** argv){
 		perror("Could not increment semaphore");
 		exit(5);
 	}
-
-
+	
 	crawler(argv[1]);
 
 	logger();
@@ -99,6 +114,8 @@ int main(int argc,char ** argv){
 	if (semctl(sem_id, 0, IPC_RMID) < 0) {
 		perror("Could not delete semaphore");
 	}
+
+	shmdt(bufferIndex);
 
 	return(0);
 }
@@ -302,9 +319,9 @@ void crawler(char *rootDirectory){
 */
 void * counter(void * filePath){
 	FILE * input;
-	int flag=1,flagForExtraSpace=0,position=0,i=0,sem_id;
-	char temp,temp_arr[200],fileName[PATH_MAX];
-	key_t sem_key;
+	int flag=1,flagForExtraSpace=0,position=0,i=0,sem_id,*bufferIndex,shmIDIndex,shmIDBuffer;
+	char temp,temp_arr[200],fileName[PATH_MAX],*buffer;
+	key_t sem_key,shmKeyIndex,shmKeyBuffer;
 	struct sembuf sop;
 
 	strcpy(fileName,(char*)filePath);
@@ -317,6 +334,63 @@ void * counter(void * filePath){
 		perror("Could not obtain semaphore");
 		exit(3);
 	}
+
+	sop.sem_num = 0;
+	sop.sem_op = -1;
+	sop.sem_flg = SEM_UNDO;
+	semop(sem_id, &sop, 1);
+
+	shmKeyIndex = ftok(".",'I');
+	shmKeyBuffer = ftok(".",'B');
+
+	if((shmIDIndex = shmget(shmKeyIndex, sizeof(int), IPC_CREAT|IPC_EXCL|0666)) == -1)
+	{
+		printf("Shared memory segment exists - opening as client\n");
+
+		/* Segment probably already exists - try as a client */
+		if((shmIDIndex = shmget(shmKeyIndex, sizeof(int), 0)) == -1)
+		{
+			perror("shmget");
+			exit(1);
+		}
+	}
+	else
+	{
+		printf("Creating new shared memory segment\n");
+	}
+
+	/* Attach (map) the shared memory segment into the current process */
+	if((bufferIndex = (int *)shmat(shmIDIndex, 0, 0)) == (int *)-1)
+	{
+		perror("shmat");
+		exit(1);
+	}
+
+	if((shmIDBuffer = shmget(shmKeyBuffer, sizeof(char) * WORD_COUNT_LIMIT * 128, IPC_CREAT|IPC_EXCL|0666)) == -1)
+	{
+		printf("Shared memory segment exists - opening as client\n");
+
+		/* Segment probably already exists - try as a client */
+		if((shmIDBuffer = shmget(shmKeyBuffer, sizeof(char) * WORD_COUNT_LIMIT * 128, 0)) == -1)
+		{
+			perror("shmget");
+			exit(1);
+		}
+	}
+	else
+	{
+		printf("Creating new shared memory segment\n");
+	}
+
+	/* Attach (map) the shared memory segment into the current process */
+	if((buffer = (char *)shmat(shmIDBuffer, 0, 0)) == (char *)-1)
+	{
+		perror("shmat");
+		exit(1);
+	}
+
+	sop.sem_op = 1;
+	semop(sem_id, &sop, 1);
 
 	while(!feof(input)){
 		fscanf(input,"%c",&temp);
@@ -349,17 +423,13 @@ void * counter(void * filePath){
 				sop.sem_flg = SEM_UNDO;
 				semop(sem_id, &sop, 1);
 
-				if(bufferIndex >= bufferSize){
-					bufferSize = bufferSize * 2;
-					buffer = realloc(buffer,sizeof(char*) * bufferSize);
-					for(i =bufferSize / 2; i < bufferSize;++i) {
-						buffer[i]=malloc(sizeof(char)*256);
-					}
+				while(*bufferIndex >= WORD_COUNT_LIMIT * 128 -strlen(temp_arr)){
+					usleep(1000); /* sleeps for one millisecond (1000 microsecond) */
 
 				}
 
-				strcpy(buffer[bufferIndex],temp_arr);
-				++bufferIndex;
+				strcpy(&buffer[*bufferIndex],temp_arr);
+				*bufferIndex = *bufferIndex + strlen(temp_arr)+1;
 
 				sop.sem_op = 1;
 				semop(sem_id, &sop, 1);
@@ -373,6 +443,8 @@ void * counter(void * filePath){
 		}
 	}
 	fclose(input);
+	shmdt(buffer);
+	shmdt(bufferIndex);
 }
 
 /**
@@ -395,8 +467,9 @@ void logger(){
 
 	FILE * logFile;
 	struct UniqueWords founded,*position,*temp;
-	int init=0,i,sem_id;
-	key_t sem_key;
+	int init=0,i,sem_id,shmIDIndex,shmIDBuffer,*bufferIndex;
+	char *buffer;
+	key_t sem_key,shmKeyIndex,shmKeyBuffer;
 	struct sembuf sop;
 
 	sem_key = ftok(".",42);
@@ -406,6 +479,63 @@ void logger(){
 		perror("Could not obtain semaphore");
 		exit(3);
 	}
+
+	sop.sem_num = 0;
+	sop.sem_op = -1;
+	sop.sem_flg = SEM_UNDO;
+	semop(sem_id, &sop, 1);
+
+	shmKeyIndex = ftok(".",'I');
+	shmKeyBuffer = ftok(".",'B');
+
+	if((shmIDIndex = shmget(shmKeyIndex, sizeof(int), IPC_CREAT|IPC_EXCL|0666)) == -1)
+	{
+		printf("Shared memory segment exists - opening as client\n");
+
+		/* Segment probably already exists - try as a client */
+		if((shmIDIndex = shmget(shmKeyIndex, sizeof(int), 0)) == -1)
+		{
+			perror("shmget");
+			exit(1);
+		}
+	}
+	else
+	{
+		printf("Creating new shared memory segment\n");
+	}
+
+	/* Attach (map) the shared memory segment into the current process */
+	if((bufferIndex = (int *)shmat(shmIDIndex, 0, 0)) == (int *)-1)
+	{
+		perror("shmat");
+		exit(1);
+	}
+
+	if((shmIDBuffer = shmget(shmKeyBuffer, sizeof(char) * WORD_COUNT_LIMIT * 128, IPC_CREAT|IPC_EXCL|0666)) == -1)
+	{
+		printf("Shared memory segment exists - opening as client\n");
+
+		/* Segment probably already exists - try as a client */
+		if((shmIDBuffer = shmget(shmKeyBuffer, sizeof(char) * WORD_COUNT_LIMIT * 128, 0)) == -1)
+		{
+			perror("shmget");
+			exit(1);
+		}
+	}
+	else
+	{
+		printf("Creating new shared memory segment\n");
+	}
+
+	/* Attach (map) the shared memory segment into the current process */
+	if((buffer = (char *)shmat(shmIDBuffer, 0, 0)) == (char *)-1)
+	{
+		perror("shmat");
+		exit(1);
+	}
+
+	sop.sem_op = 1;
+	semop(sem_id, &sop, 1);
 
 	founded.next = NULL;
 	founded.wordCount = 0;
@@ -419,32 +549,37 @@ void logger(){
 		sop.sem_flg = SEM_UNDO;
 		semop(sem_id, &sop, 1);
 
-		if(bufferIndex == 0) {
+		if(*bufferIndex <= 0) {
 			sop.sem_op = 1;
 			semop(sem_id, &sop, 1);
 			break;
 		}
 
-		if(bufferIndex >= 0 && init == 0){
-			founded.word = malloc(sizeof(char) * strlen(buffer[bufferIndex]));
-			strcpy(founded.word,buffer[bufferIndex-1]);
+		if(*bufferIndex >= 0 && init == 0){
+			for(i = *bufferIndex-2; buffer[i] != '\0';--i);
+			++i;
+
+			founded.word = malloc(sizeof(char) * strlen(&buffer[i]));
+			strcpy(founded.word,&buffer[i]);
 			++founded.wordCount;
-			--bufferIndex;
+			*bufferIndex = i;
 			++count;
 		}
 
-		if(bufferIndex >= 0 && init == 1) {
-			while(strcmp(position->word,buffer[bufferIndex-1])){
+		if(*bufferIndex >= 0 && init == 1) {
+
+			do{
+				for(i = *bufferIndex-2;i >= 0 && buffer[i] != '\0';--i){
+				}
+
 				if(position->next == NULL)
 					break;
 				position=position->next;
-			}
+			}while(strcmp(position->word,&buffer[i+1]));
 
-			if(strcmp(position->word,buffer[bufferIndex-1]) == 0){
+			if(strcmp(position->word,&buffer[i+1]) == 0){
 				++position->wordCount;
-				--bufferIndex;
-				memset(buffer[bufferIndex],'\0',256);
-
+				*bufferIndex=i;
 			}
 
 			else if(position->next == NULL){
@@ -455,10 +590,9 @@ void logger(){
 				position->wordCount = 1;
 				position->next = NULL;
 
-				position->word = malloc(sizeof(char)*strlen(buffer[bufferIndex-1]));
-				strcpy(position->word,buffer[bufferIndex-1]);
-				--bufferIndex;
-				memset(buffer[bufferIndex],'\0',256);
+				position->word = malloc(sizeof(char)*strlen(&buffer[i+1]));
+				strcpy(position->word,&buffer[i+1]);
+				*bufferIndex = i;
 				++count;
 			}
 
@@ -469,11 +603,6 @@ void logger(){
 			position = &founded;
 		init = 1;
 	}
-
-	for(i =0; i < bufferSize; ++i)
-		free(buffer[i]);
-
-	free(buffer);
 
 	position = &founded;
 
