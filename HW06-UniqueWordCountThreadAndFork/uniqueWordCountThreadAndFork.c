@@ -16,11 +16,15 @@
 #include <errno.h>
 #include <time.h>
 #include <sys/time.h>
+#include <fcntl.h>
+#include <sys/sem.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
 
 void usageError();
 int isAlpha(char key);
 void * counter(void * filePath);
-void * crawler(void *rootDirectoryName);
+void crawler(char *rootDirectory);
 void logger();
 
 struct UniqueWords {
@@ -37,16 +41,15 @@ int bufferIndex;
 int bufferSize;
 char ** buffer;
 
-pthread_t mainThreadID;
-
-pthread_mutex_t resultMutex;
-
 int main(int argc,char ** argv){
 
 	DIR *dp;
-	int i;
-	if(argc != 2)
+	int i,sem_id;
+	key_t sem_key;
+	struct sembuf sop;
+	if(argc != 2) {
 		usageError();
+	}
 
 	dp = opendir(argv[1]);
 	if(dp == NULL){
@@ -62,16 +65,40 @@ int main(int argc,char ** argv){
 	flagForWrite = 0;
 	buffer = malloc(sizeof(char*)* bufferSize);
 
-	for(i =0; i < bufferSize; ++i )
+	for(i =0; i < bufferSize; ++i ) {
 		buffer[i] = malloc(sizeof(char)*256);
+	}
 
-	mainThreadID = pthread_self();
+	sem_key = ftok(".", 42);
+	sem_id = semget(sem_key, 1, IPC_CREAT | IPC_EXCL | 0600);
+	if (sem_id < 0) {
+		perror("Could not create main sem");
+		exit(3);
+	}
 
-	crawler((void*)argv[1]);
+	if (semctl(sem_id, 0, SETVAL, 0) < 0) {
+		perror("Could not set value of semaphore");
+		exit(4);
+	}
+
+	sop.sem_num = 0;
+	sop.sem_op = 1;
+	sop.sem_flg = 0;
+	if (semop(sem_id, &sop, 1)) {
+		perror("Could not increment semaphore");
+		exit(5);
+	}
+
+
+	crawler(argv[1]);
 
 	logger();
 
 	fprintf(stderr,"There are %d unique word\n",count);
+
+	if (semctl(sem_id, 0, IPC_RMID) < 0) {
+		perror("Could not delete semaphore");
+	}
 
 	return(0);
 }
@@ -89,18 +116,27 @@ void usageError(){
 * This function will crawl through and into directories and their subdirectories
 * @param: name of the root directory which search will begin
 */
-void * crawler(void *rootDirectoryName){
+void crawler(char *rootDirectory){
 	pthread_t * thread;
-	int  i,threadCount=0,count=0,numberOfSubdirectories=0,numberOfFile=0,control;
+	int  i,threadCount=0,count=0,numberOfSubdirectories=0,numberOfFile=0,control,sem_id,status;
 	DIR *dp;
+	pid_t pid;
 	struct dirent *ep;
-	char ** dirList,**fileList,rootDirectory[PATH_MAX];
+	char ** dirList,**fileList;
 	struct timeval start, end;
 	long seconds, useconds;
+	key_t sem_key;
+	struct sembuf sop;
+
+	sem_key = ftok(".",42);
+	// Create the semaphore
+	sem_id = semget(sem_key, 0, 0);
+	if (sem_id < 0) {
+		perror("Could not obtain semaphore");
+		exit(3);
+	}
 
 	gettimeofday(&start, NULL);
-
-	strcpy(rootDirectory,(char*)rootDirectoryName);
 
 	dp = opendir(rootDirectory);
 	/* open directory and count all elements inside directory include parent('..') and current directory('.') symbol */
@@ -139,9 +175,8 @@ void * crawler(void *rootDirectoryName){
 	}
 
 	/* allocate pid numbers for each directory and file -2 here for . and .. (current and parent directory symbols) */
-	thread = malloc((count - 2)*sizeof(pthread_t));
+	thread = malloc(numberOfFile * sizeof(pthread_t));
 	dp = opendir(rootDirectory);
-
 
 	if(dp != NULL){
 
@@ -152,14 +187,19 @@ void * crawler(void *rootDirectoryName){
 			if(ep->d_type == DT_DIR && strcmp(".",ep->d_name) != 0 && strcmp("..",ep->d_name) != 0){
 
 				/*editing directory name for calling crawler function */
-				strcpy(dirList[threadCount],rootDirectory);
-				strcat(dirList[threadCount],"/");
-				strcat(dirList[threadCount],ep->d_name);
+				if( (pid = fork()) < 0 ){
+					perror("New process could not created this program will be abort\n");
+					abort();
+				}
 
-				control = pthread_create(&thread[threadCount], NULL, crawler, (void *)dirList[threadCount]);
-				if (control) {
-					printf("ERROR; return code from pthread_create() is %d\n", control);
-					exit(-1);
+				if(pid == 0){
+					/*editing directory name for calling crawler function*/
+					strcpy(dirList[threadCount],rootDirectory);
+					strcat(dirList[threadCount],"/");
+					strcat(dirList[threadCount],ep->d_name);
+
+					crawler(dirList[threadCount]);
+					exit(0);
 				}
 				++threadCount;
 			}
@@ -171,7 +211,7 @@ void * crawler(void *rootDirectoryName){
 				strcat(fileList[count - threadCount],ep->d_name);
 			}
 
-			/* Count variable will increase when . .. readed but should not increade because for this there will be thread creation */
+			/* Count variable will increase when . .. readed but should not increase because for this there will be thread creation */
 			if(strcmp(ep->d_name,".") == 0 || strcmp(ep->d_name,"..") == 0){
 				--count;
 			}
@@ -182,37 +222,50 @@ void * crawler(void *rootDirectoryName){
 		perror ("Couldn't open the directory");
 
 	/* Start new process for founded files. */
-	count = 0;
-	for (i = threadCount ; i <  threadCount + numberOfFile ; ++i)
+	for (i = 0 ; i < numberOfFile ; ++i)
 	{
 
-		if(strcmp(fileList[count],".") != 0 && strcmp(fileList[count],"..") != 0)
+		if(strcmp(fileList[i],".") != 0 && strcmp(fileList[i],"..") != 0)
 		{
-			control = pthread_create(&thread[i], NULL, counter, (void *)(fileList[count]));
+			control = pthread_create(&thread[i], NULL, counter, (void *)(fileList[i]));
 			if (control) {
 				printf("ERROR; return code from pthread_create() is %d\n", control);
 				exit(-1);
 			}
 		}
-
-		++count;
 	}
 
-	pthread_mutex_lock(&resultMutex);
+	sop.sem_num = 0;
+	sop.sem_op = -1;
+	sop.sem_flg = SEM_UNDO;
+	semop(sem_id, &sop, 1);
 
 	globalCountOfFiles = globalCountOfFiles + numberOfFile;
 	globalCountOfSubdirectories = globalCountOfSubdirectories + numberOfSubdirectories;
 
-	pthread_mutex_unlock(&resultMutex);
+	sop.sem_op = 1;
+	semop(sem_id, &sop, 1);
 
 	/* Wait for children to exit. */
-	for(i=0;numberOfFile + numberOfSubdirectories > i;++i)
+	for(i=0;numberOfFile > i;++i)
 	{
 		control = pthread_join(thread[i], NULL);
 		if (control) {
 			printf("ERROR; return code from pthread_join() is %d\n", control);
 			exit(-1);
 		}
+	}
+	i=1;
+	while(i){
+		pid=wait(&status);
+		if(pid < 0) {
+			if (errno == ECHILD)
+				break;
+		}
+		else {
+//			printf("Child %d exited with status %d\n", pid, status);
+		}
+
 	}
 
 	gettimeofday(&end, NULL);
@@ -241,13 +294,6 @@ void * crawler(void *rootDirectoryName){
 		free(fileList);
 	}
 
-	pthread_mutex_lock(&resultMutex);
-
-	if(pthread_equal(pthread_self(),mainThreadID))
-		flagForWrite = -1;
-
-	pthread_mutex_unlock(&resultMutex);
-
 }
 
 /**
@@ -256,11 +302,21 @@ void * crawler(void *rootDirectoryName){
 */
 void * counter(void * filePath){
 	FILE * input;
-	int flag=1,flagForExtraSpace=0,position=0,i=0;
+	int flag=1,flagForExtraSpace=0,position=0,i=0,sem_id;
 	char temp,temp_arr[200],fileName[PATH_MAX];
+	key_t sem_key;
+	struct sembuf sop;
 
 	strcpy(fileName,(char*)filePath);
 	input = fopen(fileName,"r");
+
+	sem_key = ftok(".",42);
+	// Create the semaphore
+	sem_id = semget(sem_key, 0, 0);
+	if (sem_id < 0) {
+		perror("Could not obtain semaphore");
+		exit(3);
+	}
 
 	while(!feof(input)){
 		fscanf(input,"%c",&temp);
@@ -288,20 +344,25 @@ void * counter(void * filePath){
 				flagForExtraSpace = 1;
 				temp_arr[position] = '\0';
 
-				pthread_mutex_lock(&resultMutex);
+				sop.sem_num = 0;
+				sop.sem_op = -1;
+				sop.sem_flg = SEM_UNDO;
+				semop(sem_id, &sop, 1);
 
 				if(bufferIndex >= bufferSize){
 					bufferSize = bufferSize * 2;
 					buffer = realloc(buffer,sizeof(char*) * bufferSize);
-					for(i =bufferSize / 2; i < bufferSize;++i)
+					for(i =bufferSize / 2; i < bufferSize;++i) {
 						buffer[i]=malloc(sizeof(char)*256);
+					}
 
 				}
 
 				strcpy(buffer[bufferIndex],temp_arr);
 				++bufferIndex;
 
-				pthread_mutex_unlock(&resultMutex);
+				sop.sem_op = 1;
+				semop(sem_id, &sop, 1);
 
 				memset(temp_arr,'\0',200);
 				++i;
@@ -334,7 +395,18 @@ void logger(){
 
 	FILE * logFile;
 	struct UniqueWords founded,*position,*temp;
-	int init=0,i;
+	int init=0,i,sem_id;
+	key_t sem_key;
+	struct sembuf sop;
+
+	sem_key = ftok(".",42);
+	// Create the semaphore
+	sem_id = semget(sem_key, 0, 0);
+	if (sem_id < 0) {
+		perror("Could not obtain semaphore");
+		exit(3);
+	}
+
 	founded.next = NULL;
 	founded.wordCount = 0;
 	position = &founded;
@@ -342,10 +414,14 @@ void logger(){
 	logFile = fopen("logFile","w+");
 
 	while(1){
-		pthread_mutex_lock(&resultMutex);
+		sop.sem_num = 0;
+		sop.sem_op = -1;
+		sop.sem_flg = SEM_UNDO;
+		semop(sem_id, &sop, 1);
 
-		if(flagForWrite == -1 && bufferIndex == 0) {
-			pthread_mutex_unlock(&resultMutex);
+		if(bufferIndex == 0) {
+			sop.sem_op = 1;
+			semop(sem_id, &sop, 1);
 			break;
 		}
 
@@ -387,7 +463,8 @@ void logger(){
 			}
 
 		}
-		pthread_mutex_unlock(&resultMutex);
+		sop.sem_op = 1;
+		semop(sem_id, &sop, 1);
 
 			position = &founded;
 		init = 1;

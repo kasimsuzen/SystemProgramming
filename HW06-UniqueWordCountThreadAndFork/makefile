@@ -1,9 +1,9 @@
 CC=gcc
 CFLAGS=-c -Wall
 LDFLAGS= -pthread
-SOURCES=uniqueWordCountThread.c
+SOURCES=UniqueWordCountThreadAndFork.c
 OBJECTS=$(SOURCES:.c=.o)
-EXECUTABLE=uniqueWordCountThread.e
+EXECUTABLE=UniqueWordCountThreadAndFork.e
 
 all: $(SOURCES) $(EXECUTABLE)
     
