@@ -32,7 +32,7 @@
 void usageError();
 int crawler(char *rootDirectory);
 void logger();
-
+int strcmpTillSpace(const char * input1,const char * input2);
 
 struct UniqueWords {
 	char * word;
@@ -394,9 +394,9 @@ void logger(){
 				if(position->next == NULL)
 					break;
 				position=position->next;
-			}while(strcmp(position->word,&buffer[i+1]));
+			}while(strcmpTillSpace(position->word,&buffer[i+1]));
 
-			if(strcmp(position->word,&buffer[i+1]) == 0){
+			if(strcmpTillSpace(position->word,&buffer[i+1]) == 0){
 				++position->wordCount;
 				*bufferIndex=i;
 			}
@@ -426,10 +426,10 @@ void logger(){
 	position = &founded;
 
 	while(position->next != NULL){
-		fprintf(logFile,"%s %da\n",position->word,position->wordCount);
+		fprintf(logFile,"%s %d\n",position->word,position->wordCount);
 		position = position->next;
 	}
-	fprintf(logFile,"%s %da\n",position->word,position->wordCount);
+	fprintf(logFile,"%s %d\n",position->word,position->wordCount);
 
 	i=0;
 	for(position = founded.next; position != NULL ; ){
@@ -447,3 +447,14 @@ void logger(){
 	fclose(logFile);
 }
 
+
+int strcmpTillSpace(const char *input1, const char *input2) {
+
+	while((*input1 != ' ' || *input2 != ' ' )&& *input1 != '\0' && *input2 != '\0'){
+		if((int)*input1 -(int)*input2 != 0 )
+			return (int)*input1 -(int)*input2 != 0;
+		++input1;
+		++input2;
+	}
+	return 0;
+}
