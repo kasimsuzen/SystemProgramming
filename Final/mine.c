@@ -1,6 +1,6 @@
 /**
 * This code written by Kasım Süzen at 24 March 2015
-* This is a unique word count program which is wrote for CSE 244's fifth homework
+* This is a unique word count program which is wrote for CSE 244's Final exam/project
 */
 
 #include <stdio.h>
@@ -21,16 +21,18 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 
+#define WORD_SIZE 128
 #define WORD_COUNT_LIMIT 100000
 #define SEMAPHORE_KEY_CHAR 'E'
 #define SHARED_KEY_FOR_FILE_LIST 'F'
 #define SHARED_KEY_FOR_FILE_LIST_INDEX 'I'
-#define SHARED_KEY_FOR_FOUNDED_DIR 'D'
+#define SHARED_KEY_FOR_FOUNDED_WORD 'W'
 #define SHARED_KEY_FOR_FOUNDED_INDEX 'H'
 
 void usageError();
 int crawler(char *rootDirectory);
 void logger();
+
 
 struct UniqueWords {
 	char * word;
@@ -83,7 +85,7 @@ int main(int argc,char ** argv){
 	*bufferIndex = 0;
 
 	sem_key = ftok(".", SEMAPHORE_KEY_CHAR);
-	sem_id = semget(sem_key, 1, IPC_CREAT | IPC_EXCL | 0600);
+	sem_id = semget(sem_key, 1, IPC_CREAT | 0666);
 	if (sem_id < 0) {
 		perror("Could not create main sem");
 		exit(3);
@@ -104,6 +106,7 @@ int main(int argc,char ** argv){
 	
 	crawler(argv[1]);
 
+	sleep(15);
 	logger();
 
 	fprintf(stderr,"There are %d unique word\n",count);
@@ -112,7 +115,6 @@ int main(int argc,char ** argv){
 		perror("Could not delete semaphore");
 	}
 
-	sleep(10);
 
 	if(shmdt(bufferIndex) != 0)
 		perror("Error at shmdt index buffer main");
@@ -242,7 +244,7 @@ int crawler(char *rootDirectory){
 			/* if readed element is directory this function will call itself with this directory */
 			if((ep->d_type == DT_DIR || ep->d_type == DT_REG) && strcmp(".",ep->d_name) != 0 && strcmp("..",ep->d_name) != 0) {
 
-				/*editing directory name for calling crawler function*/
+				/*editing directory name for calling receiver function*/
 				strcpy(itemList[count], rootDirectory);
 				strcat(itemList[count], "/");
 				strcat(itemList[count], ep->d_name);
@@ -264,6 +266,7 @@ int crawler(char *rootDirectory){
 
 	for(i=0; i < itemCount; ++i){
 		strcpy(&buffer[*bufferIndex],itemList[i]);
+		fprintf(stderr,"filename %s %s\n",itemList[i],&buffer[*bufferIndex]);
 		*bufferIndex = *bufferIndex + strlen(itemList[i]) +1;
 	}
 
@@ -318,8 +321,8 @@ void logger(){
 	sop.sem_flg = SEM_UNDO;
 	semop(sem_id, &sop, 1);
 
-	shmKeyIndex = ftok(".",SHARED_KEY_FOR_FILE_LIST_INDEX);
-	shmKeyBuffer = ftok(".",SHARED_KEY_FOR_FILE_LIST);
+	shmKeyIndex = ftok(".",SHARED_KEY_FOR_FOUNDED_INDEX);
+	shmKeyBuffer = ftok(".",SHARED_KEY_FOR_FOUNDED_WORD);
 
 	if((shmIDIndex = shmget(shmKeyIndex, sizeof(int), IPC_CREAT|IPC_EXCL|0666)) == -1)
 	{
@@ -376,7 +379,6 @@ void logger(){
 		}
 
 		if(*bufferIndex >= 0 && init == 0){
-
 			founded.word = malloc(sizeof(char) * strlen(&buffer[*bufferIndex]));
 			strcpy(founded.word,&buffer[*bufferIndex]);
 			++founded.wordCount;
@@ -424,10 +426,10 @@ void logger(){
 	position = &founded;
 
 	while(position->next != NULL){
-		fprintf(logFile,"%s %d\n",position->word,position->wordCount);
+		fprintf(logFile,"%s %da\n",position->word,position->wordCount);
 		position = position->next;
 	}
-	fprintf(logFile,"%s %d\n",position->word,position->wordCount);
+	fprintf(logFile,"%s %da\n",position->word,position->wordCount);
 
 	i=0;
 	for(position = founded.next; position != NULL ; ){
@@ -444,3 +446,4 @@ void logger(){
 
 	fclose(logFile);
 }
+
