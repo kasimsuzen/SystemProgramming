@@ -28,6 +28,8 @@
 #define SHARED_KEY_FOR_FILE_LIST_INDEX 'I'
 #define SHARED_KEY_FOR_FOUNDED_WORD 'W'
 #define SHARED_KEY_FOR_FOUNDED_INDEX 'H'
+#define SHARED_KEY_FOR_GOLD 'G'
+#define SHARED_KEY_FOR_GOLD_INDEX 'X'
 
 void usageError();
 int receiver(int numberOfFiles);
@@ -367,9 +369,9 @@ void logger(){
 
 	FILE * logFile;
 	struct UniqueWords founded,*position,*temp;
-	int init=0,i,sem_id,shmIDIndex,shmIDBuffer,*bufferIndex;
-	char *buffer,message[4096];
-	key_t sem_key,shmKeyIndex,shmKeyBuffer;
+	int init=0,i,sem_id,shmIDIndex,shmIDBuffer,*bufferIndex,*goldMessageIndex,shmIDGold,shmIDGoldIndex;
+	char *buffer,message[4096],*goldMessage;
+	key_t sem_key,shmKeyIndex,shmKeyBuffer,shmKeyGoldMessage,shmKeyGoldMessageIndex;
 	struct sembuf sop;
 
 	sem_key = ftok(".", SEMAPHORE_KEY_CHAR);
@@ -387,6 +389,8 @@ void logger(){
 
 	shmKeyIndex = ftok(".",SHARED_KEY_FOR_FOUNDED_INDEX);
 	shmKeyBuffer = ftok(".",SHARED_KEY_FOR_FOUNDED_WORD);
+	shmKeyGoldMessage = ftok(".",SHARED_KEY_FOR_GOLD);
+	shmKeyGoldMessageIndex = ftok(".",SHARED_KEY_FOR_GOLD_INDEX);
 
 	if((shmIDIndex = shmget(shmKeyIndex, sizeof(int), IPC_CREAT|IPC_EXCL|0666)) == -1)
 	{
@@ -421,6 +425,39 @@ void logger(){
 		exit(1);
 	}
 
+	if((shmIDGoldIndex = shmget(shmKeyGoldMessageIndex, sizeof(int), IPC_CREAT|IPC_EXCL|0666)) == -1)
+	{
+		/* Segment probably already exists - try as a client */
+		if((shmIDGoldIndex = shmget(shmKeyGoldMessageIndex, sizeof(int) *1, 0)) == -1)
+		{
+			perror("shmget");
+			exit(1);
+		}
+	}
+	/* Attach (map) the shared memory segment into the current process */
+	if((goldMessageIndex = (int *)shmat(shmIDGoldIndex, 0, 0)) == (int *)-1)
+	{
+		perror("shmat");
+		exit(1);
+	}
+
+	if((shmIDGold = shmget(shmKeyGoldMessage, sizeof(char) * WORD_COUNT_LIMIT * WORD_SIZE, IPC_CREAT|IPC_EXCL|0666)) == -1)
+	{
+		/* Segment probably already exists - try as a client */
+		if((shmIDGold = shmget(shmKeyGoldMessage, sizeof(char) * WORD_COUNT_LIMIT * WORD_SIZE, 0)) == -1)
+		{
+			perror("shmget");
+			exit(1);
+		}
+	}
+
+	/* Attach (map) the shared memory segment into the current process */
+	if((goldMessage = (char *)shmat(shmIDGold, 0, 0)) == (char *)-1)
+	{
+		perror("shmat");
+		exit(1);
+	}
+
 	sop.sem_op = 1;
 	semop(sem_id, &sop, 1);
 
@@ -428,7 +465,8 @@ void logger(){
 	founded.wordCount = 0;
 	position = &founded;
 
-	logFile = fopen("logFile","w+");
+	sprintf(message,"logFileClient_%d",getpid());
+	logFile = fopen(message,"w+");
 	fprintf(stderr,"Founded index %d %d\n",foundedWordsIndex,foundedWordsSize);
 
 	while(1){
@@ -500,16 +538,82 @@ void logger(){
 	*bufferIndex = *bufferIndex + strlen(message) +1;
 	while(position->next != NULL){
 		sprintf(message,"%s %d",position->word,position->wordCount);
+		fprintf(logFile,"%s %d\n",position->word,position->wordCount);
 		strcpy(&buffer[*bufferIndex],message);
 		*bufferIndex = *bufferIndex + strlen(message) +1;
 		position = position->next;
 	}
 	sprintf(message,"%s %d",position->word,position->wordCount);
+	fprintf(logFile,"%s %d\n",position->word,position->wordCount);
 	strcpy(&buffer[*bufferIndex],message);
 	*bufferIndex = *bufferIndex + strlen(message) +1;
 
 	sop.sem_op = 1;
 	semop(sem_id, &sop, 1);
+
+	i=-1;
+
+	while(i == -1){
+		sop.sem_num = 0;
+		sop.sem_op = -1;
+		sop.sem_flg = SEM_UNDO;
+		semop(sem_id, &sop, 1);
+		if(*goldMessageIndex != 0)
+			i = 0;
+		sop.sem_op = 1;
+		semop(sem_id, &sop, 1);
+		if( i == -1)
+			usleep(1000);
+	}
+	init = 1;
+	while(*goldMessageIndex > 0 && init  != 0){
+		sop.sem_num = 0;
+		sop.sem_op = -1;
+		sop.sem_flg = SEM_UNDO;
+		semop(sem_id, &sop, 1);
+
+		while(init){
+			for (i = *goldMessageIndex - 2; i >= 0 && goldMessage[i] != '\0'; --i) {
+			}
+			++i;
+			if (goldMessage[i] == '!')
+				fprintf(stderr, "good %s\n", &goldMessage[i]);
+			sprintf(message, "! %d!", getpid());
+			fprintf(stderr, "%s %s %d\n", message, &goldMessage[i], i);
+			usleep(500000);
+			if (strcmp(&goldMessage[i], message) == 0) {
+				*goldMessageIndex = i;
+				while (*goldMessageIndex > 0 && i > 0) {
+					for (i = *goldMessageIndex - 2; i >= 0 && goldMessage[i] != '\0'; --i) {
+					}
+					++i;
+					fprintf(stderr,"i value %d ",i);
+					fprintf(logFile, "log %s\n", &goldMessage[i]);
+					fprintf(stderr, "log %s %d %d\n", &goldMessage[i],i,*goldMessageIndex);
+					*goldMessageIndex = i;
+					if (goldMessage[*goldMessageIndex] == '!' || i == 0) {
+						if(goldMessage[*goldMessageIndex] == '!'){
+							*goldMessageIndex = *goldMessageIndex + strlen(&goldMessage[*goldMessageIndex])+1;
+						}
+						init=0;
+						break;
+					}
+				}
+				fprintf(stderr,"dondu\n");
+			}
+			else{
+				break;
+			}
+		}
+		sop.sem_op = 1;
+		semop(sem_id, &sop, 1);
+		usleep(1000);
+	}
+
+	shmdt(bufferIndex);
+	shmdt(buffer);
+	shmdt(goldMessage);
+	shmdt(goldMessageIndex);
 
 	i=0;
 	for(position = founded.next; position != NULL ; ){

@@ -28,6 +28,8 @@
 #define SHARED_KEY_FOR_FILE_LIST_INDEX 'I'
 #define SHARED_KEY_FOR_FOUNDED_WORD 'W'
 #define SHARED_KEY_FOR_FOUNDED_INDEX 'H'
+#define SHARED_KEY_FOR_GOLD 'G'
+#define SHARED_KEY_FOR_GOLD_INDEX 'X'
 
 void usageError();
 int crawler(char *rootDirectory);
@@ -47,8 +49,8 @@ int count;
 int main(int argc,char ** argv){
 
 	DIR *dp;
-	int *bufferIndex,sem_id,shmIDIndex,shmIDBuffer;
-	key_t sem_key,shmKeyIndex;
+	int *bufferIndex,*goldIndex,sem_id,shmIDIndex,shmIDBuffer,shmIDGold,shmIDGoldIndex;
+	key_t sem_key,shmKeyIndex,shmKeyGoldIndex;
 	struct sembuf sop;
 	if(argc <= 1) {
 		usageError();
@@ -64,6 +66,7 @@ int main(int argc,char ** argv){
 
 	count =0;
 	shmKeyIndex = ftok(".",SHARED_KEY_FOR_FILE_LIST_INDEX);
+	shmKeyGoldIndex = ftok(".",SHARED_KEY_FOR_GOLD_INDEX);
 
 	if((shmIDIndex = shmget(shmKeyIndex, sizeof(int), IPC_CREAT|IPC_EXCL|0666)) == -1)
 	{
@@ -82,7 +85,27 @@ int main(int argc,char ** argv){
 		exit(1);
 	}
 
+
+
+	if((shmIDGoldIndex = shmget(shmKeyGoldIndex, sizeof(int)*1, IPC_CREAT|IPC_EXCL|0666)) == -1)
+	{
+		/* Segment probably already exists - try as a client */
+		if((shmIDGoldIndex = shmget(shmKeyGoldIndex, sizeof(int), 0)) == -1)
+		{
+			perror("shmget");
+			exit(1);
+		}
+	}
+
+	/* Attach (map) the shared memory segment into the current process */
+	if((goldIndex = (int *)shmat(shmIDGoldIndex, 0, 0)) == (int *)-1)
+	{
+		perror("shmat");
+		exit(1);
+	}
+
 	*bufferIndex = 0;
+	*goldIndex = 0;
 
 	sem_key = ftok(".", SEMAPHORE_KEY_CHAR);
 	sem_id = semget(sem_key, 1, IPC_CREAT | 0666);
@@ -103,29 +126,42 @@ int main(int argc,char ** argv){
 		perror("Could not increment semaphore");
 		exit(5);
 	}
-	
+
 	crawler(argv[1]);
 
-	sleep(15);
+	sleep(5);
 	logger();
 
 	fprintf(stderr,"There are %d unique word\n",count);
 	fprintf(stderr,"There are %d subdirectories and %d files under %s\n",globalCountOfSubdirectories,globalCountOfFiles,argv[1]);
+	sleep(15);
 	if (semctl(sem_id, 0, IPC_RMID) < 0) {
 		perror("Could not delete semaphore");
 	}
 
-
-	if(shmdt(bufferIndex) != 0)
+	if(shmdt(bufferIndex) != 0) {
 		perror("Error at shmdt index buffer main");
+	}
+	if(shmdt(goldIndex) != 0) {
+		perror("Error at shmdt gold index buffer main");
+	}
 
-	shmIDBuffer = shmget(ftok(".",SHARED_KEY_FOR_FILE_LIST), sizeof(char) * WORD_COUNT_LIMIT * 128, 0);
+	shmIDBuffer = shmget(ftok(".",SHARED_KEY_FOR_FILE_LIST), sizeof(char) * WORD_COUNT_LIMIT * WORD_SIZE, 0);
+	shmIDGold = shmget(ftok(".",SHARED_KEY_FOR_GOLD), sizeof(char) * WORD_COUNT_LIMIT * WORD_SIZE, 0);
 
-	if(shmctl(shmIDBuffer,IPC_RMID,NULL) != 0)
-		perror("Error at shmctl index main");
+	if(shmctl(shmIDBuffer,IPC_RMID,NULL) != 0) {
+		perror("Error at shmctl index main mine");
+	}
 
-	if(shmctl(shmIDIndex,IPC_RMID,NULL) != 0)
-		perror("Error at shmctl at message main");
+	if(shmctl(shmIDIndex,IPC_RMID,NULL) != 0) {
+		perror("Error at shmctl at message main mine");
+	}
+
+	if(shmctl(shmIDGold,IPC_RMID,NULL) != 0)
+		perror("Error at shmctl at gold distrubution main mine ");
+
+	if(shmctl(shmIDGoldIndex,IPC_RMID,NULL) != 0)
+		perror("Error at shmctl at gold index main mine ");
 
 	return(0);
 }
@@ -185,10 +221,10 @@ int crawler(char *rootDirectory){
 		exit(1);
 	}
 
-	if((shmIDBuffer = shmget(shmKeyBuffer, sizeof(char) * WORD_COUNT_LIMIT * 128, IPC_CREAT|IPC_EXCL|0666)) == -1)
+	if((shmIDBuffer = shmget(shmKeyBuffer, sizeof(char) * WORD_COUNT_LIMIT * WORD_SIZE, IPC_CREAT|IPC_EXCL|0666)) == -1)
 	{
 		/* Segment probably already exists - try as a client */
-		if((shmIDBuffer = shmget(shmKeyBuffer, sizeof(char) * WORD_COUNT_LIMIT * 128, 0)) == -1)
+		if((shmIDBuffer = shmget(shmKeyBuffer, sizeof(char) * WORD_COUNT_LIMIT * WORD_SIZE, 0)) == -1)
 		{
 			perror("shmget");
 			exit(1);
@@ -303,9 +339,9 @@ void logger(){
 
 	FILE * logFile;
 	struct UniqueWords founded,*position,*temp;
-	int init=0,i,sem_id,shmIDIndex,shmIDBuffer,*bufferIndex;
-	char *buffer;
-	key_t sem_key,shmKeyIndex,shmKeyBuffer;
+	int init=0,i,sem_id,shmIDIndex,shmIDBuffer,*bufferIndex,*goldMessageIndex,shmIDGold,shmIDGoldIndex;
+	char *buffer,*goldMessage,tempMessage[WORD_SIZE];
+	key_t sem_key,shmKeyIndex,shmKeyBuffer,shmKeyGoldMessage,shmKeyGoldMessageIndex;
 	struct sembuf sop;
 
 	sem_key = ftok(".", SEMAPHORE_KEY_CHAR);
@@ -323,6 +359,8 @@ void logger(){
 
 	shmKeyIndex = ftok(".",SHARED_KEY_FOR_FOUNDED_INDEX);
 	shmKeyBuffer = ftok(".",SHARED_KEY_FOR_FOUNDED_WORD);
+	shmKeyGoldMessage = ftok(".",SHARED_KEY_FOR_GOLD);
+	shmKeyGoldMessageIndex = ftok(".",SHARED_KEY_FOR_GOLD_INDEX);
 
 	if((shmIDIndex = shmget(shmKeyIndex, sizeof(int), IPC_CREAT|IPC_EXCL|0666)) == -1)
 	{
@@ -340,10 +378,10 @@ void logger(){
 		exit(1);
 	}
 
-	if((shmIDBuffer = shmget(shmKeyBuffer, sizeof(char) * WORD_COUNT_LIMIT * 128, IPC_CREAT|IPC_EXCL|0666)) == -1)
+	if((shmIDBuffer = shmget(shmKeyBuffer, sizeof(char) * WORD_COUNT_LIMIT * WORD_SIZE, IPC_CREAT|IPC_EXCL|0666)) == -1)
 	{
 		/* Segment probably already exists - try as a client */
-		if((shmIDBuffer = shmget(shmKeyBuffer, sizeof(char) * WORD_COUNT_LIMIT * 128, 0)) == -1)
+		if((shmIDBuffer = shmget(shmKeyBuffer, sizeof(char) * WORD_COUNT_LIMIT * WORD_SIZE, 0)) == -1)
 		{
 			perror("shmget");
 			exit(1);
@@ -352,6 +390,39 @@ void logger(){
 
 	/* Attach (map) the shared memory segment into the current process */
 	if((buffer = (char *)shmat(shmIDBuffer, 0, 0)) == (char *)-1)
+	{
+		perror("shmat");
+		exit(1);
+	}
+
+	if((shmIDGoldIndex = shmget(shmKeyGoldMessageIndex, sizeof(int), IPC_CREAT|IPC_EXCL|0666)) == -1)
+	{
+		/* Segment probably already exists - try as a client */
+		if((shmIDGoldIndex = shmget(shmKeyGoldMessageIndex, sizeof(int) *1, 0)) == -1)
+		{
+			perror("shmget");
+			exit(1);
+		}
+	}
+	/* Attach (map) the shared memory segment into the current process */
+	if((goldMessageIndex = (int *)shmat(shmIDGoldIndex, 0, 0)) == (int *)-1)
+	{
+		perror("shmat");
+		exit(1);
+	}
+
+	if((shmIDGold = shmget(shmKeyGoldMessage, sizeof(char) * WORD_COUNT_LIMIT * WORD_SIZE, IPC_CREAT|IPC_EXCL|0666)) == -1)
+	{
+		/* Segment probably already exists - try as a client */
+		if((shmIDGold = shmget(shmKeyGoldMessage, sizeof(char) * WORD_COUNT_LIMIT * WORD_SIZE, 0)) == -1)
+		{
+			perror("shmget");
+			exit(1);
+		}
+	}
+
+	/* Attach (map) the shared memory segment into the current process */
+	if((goldMessage = (char *)shmat(shmIDGold, 0, 0)) == (char *)-1)
 	{
 		perror("shmat");
 		exit(1);
@@ -366,27 +437,32 @@ void logger(){
 
 	logFile = fopen("logFile","w+");
 
+	sop.sem_num = 0;
+	sop.sem_op = -1;
+	sop.sem_flg = SEM_UNDO;
+	semop(sem_id, &sop, 1);
+
 	while(1){
-		sop.sem_num = 0;
-		sop.sem_op = -1;
-		sop.sem_flg = SEM_UNDO;
-		semop(sem_id, &sop, 1);
 
 		if(*bufferIndex <= 0) {
-			sop.sem_op = 1;
-			semop(sem_id, &sop, 1);
 			break;
 		}
 
 		if(*bufferIndex >= 0 && init == 0){
+			for(i = *bufferIndex-2;i >= 0 && buffer[i] != '\0';--i){
+			}
+			*bufferIndex = i+1;
 			founded.word = malloc(sizeof(char) * strlen(&buffer[*bufferIndex]));
-			strcpy(founded.word,&buffer[*bufferIndex]);
-			++founded.wordCount;
+			strncpy(founded.word,&buffer[*bufferIndex],strchr(&buffer[*bufferIndex],' ') - &buffer[*bufferIndex]);
+			founded.wordCount= atoi(strchr(&buffer[*bufferIndex],' ')+1);
 			++count;
+			fprintf(stderr,"debug 11 %s %d\n",founded.word,founded.wordCount);
+			sprintf(tempMessage,"%s %d",founded.word,founded.wordCount*10);
+			strcpy(&goldMessage[*goldMessageIndex],tempMessage);
+			*goldMessageIndex += strlen(tempMessage)+1;
 		}
 
 		if(*bufferIndex >= 0 && init == 1) {
-
 			do{
 				for(i = *bufferIndex-2;i >= 0 && buffer[i] != '\0';--i){
 				}
@@ -397,39 +473,58 @@ void logger(){
 			}while(strcmpTillSpace(position->word,&buffer[i+1]));
 
 			if(strcmpTillSpace(position->word,&buffer[i+1]) == 0){
-				++position->wordCount;
-				*bufferIndex=i;
+				*bufferIndex=i+1;
+				position->wordCount += atoi(strchr(&buffer[i+1],' ')+1);
+				fprintf(stderr,"debug 22 %s %d\n",&buffer[i+1],position->wordCount);
+
+				sprintf(tempMessage,"%s %d",position->word,atoi(strchr(&buffer[i+1],' ')+1));
+				strcpy(&goldMessage[*goldMessageIndex],tempMessage);
+				*goldMessageIndex += strlen(tempMessage)+1;
 			}
 
 			else if(position->next == NULL){
+				if(buffer[i+1] != '!') {
+					position->next = malloc(sizeof(struct UniqueWords));
+					position = position->next;
 
-				position->next = malloc(sizeof(struct UniqueWords));
-				position = position->next;
+					position->wordCount = atoi(strchr(&buffer[i + 1], ' ') + 1);
+					position->next = NULL;
 
-				position->wordCount = 1;
-				position->next = NULL;
+					position->word = malloc(sizeof(char) * strlen(&buffer[i + 1]));
+					strncpy(position->word, &buffer[i + 1], strchr(&buffer[i + 1], ' ') - &buffer[i + 1]);
+					fprintf(stderr, "debug 33 %s %d\n", &buffer[i + 1], position->wordCount);
 
-				position->word = malloc(sizeof(char)*strlen(&buffer[i+1]));
-				strcpy(position->word,&buffer[i+1]);
-				*bufferIndex = i;
-				++count;
+					sprintf(tempMessage, "%s %d",position->word, position->wordCount * 10);
+					strcpy(&goldMessage[*goldMessageIndex], tempMessage);
+					*goldMessageIndex += strlen(tempMessage) + 1;
+					*bufferIndex = i + 1;
+					++count;
+				}
+				else{
+					sprintf(tempMessage,"%s!",&buffer[i+1]);
+					strcpy(&goldMessage[*goldMessageIndex],tempMessage);
+					*goldMessageIndex += strlen(tempMessage) + 1;
+					*bufferIndex = i + 1;
+				}
 			}
-
 		}
-		sop.sem_op = 1;
-		semop(sem_id, &sop, 1);
 
-			position = &founded;
+		position = &founded;
 		init = 1;
 	}
+
+	sop.sem_op = 1;
+	semop(sem_id, &sop, 1);
 
 	position = &founded;
 
 	while(position->next != NULL){
 		fprintf(logFile,"%s %d\n",position->word,position->wordCount);
+		fprintf(stderr,"%s %d\n",position->word,position->wordCount);
 		position = position->next;
 	}
 	fprintf(logFile,"%s %d\n",position->word,position->wordCount);
+	fprintf(stderr,"%s %d\n",position->word,position->wordCount);
 
 	i=0;
 	for(position = founded.next; position != NULL ; ){
@@ -443,6 +538,11 @@ void logger(){
 	}
 	free(temp);
 	free(founded.word);
+
+	shmdt(buffer);
+	shmdt(bufferIndex);
+	shmdt(goldMessage);
+	shmdt(goldMessageIndex);
 
 	fclose(logFile);
 }
