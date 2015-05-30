@@ -42,6 +42,12 @@ struct UniqueWords {
 	struct UniqueWords * next;
 }UniqueWords_t;
 
+struct minerInfo{
+	int pid,paidCoin;
+	long int startSecond,startMicrosecond,endSecond,endMicrosecond;
+	struct minerInfo * next;
+}minerInfo_t;
+
 int globalCountOfFiles;
 int globalCountOfSubdirectories;
 int count;
@@ -49,8 +55,8 @@ int count;
 int main(int argc,char ** argv){
 
 	DIR *dp;
-	int *bufferIndex,*goldIndex,sem_id,shmIDIndex,shmIDBuffer,shmIDGold,shmIDGoldIndex;
-	key_t sem_key,shmKeyIndex,shmKeyGoldIndex;
+	int i=1,j,*bufferIndex,*goldIndex,*foundIndex,sem_id,shmIDIndex,shmIDBuffer,shmIDGold,shmIDGoldIndex,shmIDFoundIndex,shmIDFound;
+	key_t sem_key,shmKeyIndex,shmKeyGoldIndex,shmKeyFoundIndex;
 	struct sembuf sop;
 	if(argc <= 1) {
 		usageError();
@@ -67,6 +73,8 @@ int main(int argc,char ** argv){
 	count =0;
 	shmKeyIndex = ftok(".",SHARED_KEY_FOR_FILE_LIST_INDEX);
 	shmKeyGoldIndex = ftok(".",SHARED_KEY_FOR_GOLD_INDEX);
+	shmKeyFoundIndex = ftok(".",SHARED_KEY_FOR_FOUNDED_INDEX);
+
 
 	if((shmIDIndex = shmget(shmKeyIndex, sizeof(int), IPC_CREAT|IPC_EXCL|0666)) == -1)
 	{
@@ -85,8 +93,6 @@ int main(int argc,char ** argv){
 		exit(1);
 	}
 
-
-
 	if((shmIDGoldIndex = shmget(shmKeyGoldIndex, sizeof(int)*1, IPC_CREAT|IPC_EXCL|0666)) == -1)
 	{
 		/* Segment probably already exists - try as a client */
@@ -104,6 +110,24 @@ int main(int argc,char ** argv){
 		exit(1);
 	}
 
+	if((shmIDFoundIndex = shmget(shmKeyFoundIndex, sizeof(int)*1, IPC_CREAT|IPC_EXCL|0666)) == -1)
+	{
+		/* Segment probably already exists - try as a client */
+		if((shmIDFoundIndex = shmget(shmKeyFoundIndex, sizeof(int), 0)) == -1)
+		{
+			perror("shmget");
+			exit(1);
+		}
+	}
+
+	/* Attach (map) the shared memory segment into the current process */
+	if((foundIndex = (int *)shmat(shmIDFoundIndex, 0, 0)) == (int *)-1)
+	{
+		perror("shmat");
+		exit(1);
+	}
+
+	*foundIndex=0;
 	*bufferIndex = 0;
 	*goldIndex = 0;
 
@@ -128,13 +152,46 @@ int main(int argc,char ** argv){
 	}
 
 	crawler(argv[1]);
+	while(i) {
+		sop.sem_num = 0;
+		sop.sem_op = -1;
+		sop.sem_flg = SEM_UNDO;
+		semop(sem_id, &sop, 1);
 
-	sleep(5);
-	logger();
+		i = *bufferIndex;
+		j= *foundIndex;
+		sop.sem_op = 1;
+		semop(sem_id, &sop, 1);
+
+		while(i > 0 && j <= 0) {
+			usleep(50000);
+
+			sop.sem_num = 0;
+			sop.sem_op = -1;
+			sop.sem_flg = SEM_UNDO;
+			semop(sem_id, &sop, 1);
+
+			i = *bufferIndex;
+			j= *foundIndex;
+
+			sop.sem_op = 1;
+			semop(sem_id, &sop, 1);
+
+			i=1;
+		}
+		if(i < 0){
+			i=-1;
+			break;
+		}
+		if(i == 0 && j > 0) {
+			sleep(1);
+			logger();
+			break;
+		}
+	}
 
 	fprintf(stderr,"There are %d unique word\n",count);
 	fprintf(stderr,"There are %d subdirectories and %d files under %s\n",globalCountOfSubdirectories,globalCountOfFiles,argv[1]);
-	sleep(15);
 	if (semctl(sem_id, 0, IPC_RMID) < 0) {
 		perror("Could not delete semaphore");
 	}
@@ -148,6 +205,7 @@ int main(int argc,char ** argv){
 
 	shmIDBuffer = shmget(ftok(".",SHARED_KEY_FOR_FILE_LIST), sizeof(char) * WORD_COUNT_LIMIT * WORD_SIZE, 0);
 	shmIDGold = shmget(ftok(".",SHARED_KEY_FOR_GOLD), sizeof(char) * WORD_COUNT_LIMIT * WORD_SIZE, 0);
+	shmIDFound = shmget(ftok(".",SHARED_KEY_FOR_FOUNDED_WORD),sizeof(char) * WORD_COUNT_LIMIT * WORD_SIZE,0);
 
 	if(shmctl(shmIDBuffer,IPC_RMID,NULL) != 0) {
 		perror("Error at shmctl index main mine");
@@ -156,6 +214,12 @@ int main(int argc,char ** argv){
 	if(shmctl(shmIDIndex,IPC_RMID,NULL) != 0) {
 		perror("Error at shmctl at message main mine");
 	}
+
+	if(shmctl(shmIDFound,IPC_RMID,NULL) != 0)
+		perror("Error at shmctl index main mine");
+
+	if(shmctl(shmIDFoundIndex,IPC_RMID,NULL) != 0)
+		perror("Error at shmctl at gold distrubution main mine ");
 
 	if(shmctl(shmIDGold,IPC_RMID,NULL) != 0)
 		perror("Error at shmctl at gold distrubution main mine ");
@@ -237,7 +301,6 @@ int crawler(char *rootDirectory){
 		perror("shmat");
 		exit(1);
 	}
-
 	sop.sem_op = 1;
 	semop(sem_id, &sop, 1);
 
@@ -302,10 +365,8 @@ int crawler(char *rootDirectory){
 
 	for(i=0; i < itemCount; ++i){
 		strcpy(&buffer[*bufferIndex],itemList[i]);
-		fprintf(stderr,"filename %s %s\n",itemList[i],&buffer[*bufferIndex]);
 		*bufferIndex = *bufferIndex + strlen(itemList[i]) +1;
 	}
-
 	sop.sem_op = 1;
 	semop(sem_id, &sop, 1);
 
@@ -338,11 +399,14 @@ int crawler(char *rootDirectory){
 void logger(){
 
 	FILE * logFile;
-	struct UniqueWords founded,*position,*temp;
-	int init=0,i,sem_id,shmIDIndex,shmIDBuffer,*bufferIndex,*goldMessageIndex,shmIDGold,shmIDGoldIndex;
+	struct UniqueWords founded,*UniqueWords_position,*UniqueWords_temp;
+	struct minerInfo minerList,*minerInfo_position,*minerInfo_temp;
+	int init=0,i,sem_id,shmIDIndex,shmIDBuffer,*bufferIndex,*goldMessageIndex,shmIDGold,shmIDGoldIndex,tempCoin=0;
 	char *buffer,*goldMessage,tempMessage[WORD_SIZE];
 	key_t sem_key,shmKeyIndex,shmKeyBuffer,shmKeyGoldMessage,shmKeyGoldMessageIndex;
 	struct sembuf sop;
+
+	minerList.pid = -1;
 
 	sem_key = ftok(".", SEMAPHORE_KEY_CHAR);
 	// Create the semaphore
@@ -433,9 +497,11 @@ void logger(){
 
 	founded.next = NULL;
 	founded.wordCount = 0;
-	position = &founded;
 
-	logFile = fopen("logFile","w+");
+	UniqueWords_position = &founded;
+	minerInfo_position = &minerList;
+
+	logFile = fopen("serverLogFile","w+");
 
 	sop.sem_num = 0;
 	sop.sem_op = -1;
@@ -456,8 +522,8 @@ void logger(){
 			strncpy(founded.word,&buffer[*bufferIndex],strchr(&buffer[*bufferIndex],' ') - &buffer[*bufferIndex]);
 			founded.wordCount= atoi(strchr(&buffer[*bufferIndex],' ')+1);
 			++count;
-			fprintf(stderr,"debug 11 %s %d\n",founded.word,founded.wordCount);
 			sprintf(tempMessage,"%s %d",founded.word,founded.wordCount*10);
+			tempCoin = tempCoin + founded.wordCount *10;
 			strcpy(&goldMessage[*goldMessageIndex],tempMessage);
 			*goldMessageIndex += strlen(tempMessage)+1;
 		}
@@ -467,41 +533,76 @@ void logger(){
 				for(i = *bufferIndex-2;i >= 0 && buffer[i] != '\0';--i){
 				}
 
-				if(position->next == NULL)
+				if(UniqueWords_position->next == NULL)
 					break;
-				position=position->next;
-			}while(strcmpTillSpace(position->word,&buffer[i+1]));
+				UniqueWords_position = UniqueWords_position->next;
+			}while(strcmpTillSpace(UniqueWords_position->word,&buffer[i+1]));
 
-			if(strcmpTillSpace(position->word,&buffer[i+1]) == 0){
+			if(strcmpTillSpace(UniqueWords_position->word,&buffer[i+1]) == 0 && strlen(&buffer[i+1]) >0){
 				*bufferIndex=i+1;
-				position->wordCount += atoi(strchr(&buffer[i+1],' ')+1);
-				fprintf(stderr,"debug 22 %s %d\n",&buffer[i+1],position->wordCount);
-
-				sprintf(tempMessage,"%s %d",position->word,atoi(strchr(&buffer[i+1],' ')+1));
+				UniqueWords_position->wordCount += atoi(strchr(&buffer[i+1],' ')+1);
+				tempCoin = tempCoin + atoi(strchr(&buffer[i+1],' ')+1);
+				sprintf(tempMessage,"%s %d", UniqueWords_position->word,atoi(strchr(&buffer[i+1],' ')+1));
 				strcpy(&goldMessage[*goldMessageIndex],tempMessage);
 				*goldMessageIndex += strlen(tempMessage)+1;
 			}
 
-			else if(position->next == NULL){
+			else if(UniqueWords_position->next == NULL){
 				if(buffer[i+1] != '!') {
-					position->next = malloc(sizeof(struct UniqueWords));
-					position = position->next;
+					UniqueWords_position->next = malloc(sizeof(struct UniqueWords));
+					UniqueWords_position = UniqueWords_position->next;
 
-					position->wordCount = atoi(strchr(&buffer[i + 1], ' ') + 1);
-					position->next = NULL;
+					UniqueWords_position->wordCount = atoi(strchr(&buffer[i + 1], ' ') + 1);
+					UniqueWords_position->next = NULL;
 
-					position->word = malloc(sizeof(char) * strlen(&buffer[i + 1]));
-					strncpy(position->word, &buffer[i + 1], strchr(&buffer[i + 1], ' ') - &buffer[i + 1]);
-					fprintf(stderr, "debug 33 %s %d\n", &buffer[i + 1], position->wordCount);
+					UniqueWords_position->word = malloc(sizeof(char) * strlen(&buffer[i + 1]));
+					strncpy(UniqueWords_position->word, &buffer[i + 1], strchr(&buffer[i + 1], ' ') - &buffer[i + 1]);
 
-					sprintf(tempMessage, "%s %d",position->word, position->wordCount * 10);
+					sprintf(tempMessage, "%s %d", UniqueWords_position->word, UniqueWords_position->wordCount * 10);
+					tempCoin = tempCoin + UniqueWords_position->wordCount *10;
 					strcpy(&goldMessage[*goldMessageIndex], tempMessage);
 					*goldMessageIndex += strlen(tempMessage) + 1;
 					*bufferIndex = i + 1;
 					++count;
 				}
 				else{
-					sprintf(tempMessage,"%s!",&buffer[i+1]);
+					strncpy(tempMessage,&buffer[i+1],strchr(&buffer[i+3],' ') - &buffer[i+1]);
+					if(minerList.pid == -1){
+						minerList.pid = atoi(&buffer[i+3]);
+
+						i += strchr(&buffer[i+3],' ') + 1 - &buffer[i+3] ;
+						minerList.startSecond = atoi(&buffer[i]);
+						i += strchr(&buffer[i],' ') -&buffer[i] + 1;
+						minerList.startMicrosecond = atoi(&buffer[i]);
+
+						minerList.paidCoin = tempCoin;
+						tempCoin = 0;
+
+						minerList.next = NULL;
+					}
+					else if(minerList.pid != -1){
+						if(minerInfo_position->next == NULL)
+							minerInfo_position ->next = malloc(sizeof(struct minerInfo));
+
+						minerInfo_position = minerInfo_position->next;
+
+						minerInfo_position->pid = atoi(&buffer[i+3]);
+						i += strchr(&buffer[i+3],' ') - &buffer[i+3] + 1;
+						minerInfo_position->startSecond = atoi(&buffer[i]);
+						i += strchr(&buffer[i],' ') - &buffer[i] + 1;
+						minerInfo_position->startMicrosecond = atoi(&buffer[i]);
+						minerInfo_position->next = NULL;
+
+						minerInfo_position->paidCoin =tempCoin;
+						tempCoin = 0;
+					}
+					else{
+						fprintf(stderr,"There is an error at minerInfo logging\n");
+					}
+					for(i = *bufferIndex-2;i >= 0 && buffer[i] != '\0';--i){
+					}
+					strncpy(tempMessage,&buffer[i+1],strchr(&buffer[i+3],' ') - &buffer[i+1]);
+					strcat(tempMessage,"!");
 					strcpy(&goldMessage[*goldMessageIndex],tempMessage);
 					*goldMessageIndex += strlen(tempMessage) + 1;
 					*bufferIndex = i + 1;
@@ -509,34 +610,45 @@ void logger(){
 			}
 		}
 
-		position = &founded;
+		UniqueWords_position = &founded;
 		init = 1;
 	}
-
 	sop.sem_op = 1;
 	semop(sem_id, &sop, 1);
 
-	position = &founded;
+	UniqueWords_position = &founded;
 
-	while(position->next != NULL){
-		fprintf(logFile,"%s %d\n",position->word,position->wordCount);
-		fprintf(stderr,"%s %d\n",position->word,position->wordCount);
-		position = position->next;
+	while(UniqueWords_position->next != NULL){
+		fprintf(logFile,"%s %d\n", UniqueWords_position->word, UniqueWords_position->wordCount);
+		UniqueWords_position = UniqueWords_position->next;
 	}
-	fprintf(logFile,"%s %d\n",position->word,position->wordCount);
-	fprintf(stderr,"%s %d\n",position->word,position->wordCount);
 
+	fprintf(logFile,"%s %d\n", UniqueWords_position->word, UniqueWords_position->wordCount);
 	i=0;
-	for(position = founded.next; position != NULL ; ){
+	fprintf(logFile,"%d pid numbered miner finished it job at %ld second and %ld microsecond and paid %d coin of gold\n",minerList.pid,minerList.startSecond,minerList.startMicrosecond,minerList.paidCoin);
+
+	for(minerInfo_position = minerList.next; minerInfo_position != NULL; ){
+		fprintf(logFile,"%d pid numbered miner finished it job at %ld second and %ld microsecond and paid %d coin of gold\n",minerInfo_position->pid,minerInfo_position->startSecond,minerInfo_position->startMicrosecond,minerInfo_position->paidCoin);
+		minerInfo_temp = minerInfo_position;
+		if(minerInfo_position->next != NULL)
+			free(minerInfo_position);
+		minerInfo_position = minerInfo_temp->next;
 		++i;
-		temp = position;
-		free(temp->word);
-		if(position->next != NULL){
-			free(position);
-		}
-		position = temp->next;
 	}
-	free(temp);
+
+	fprintf(logFile,"Total number of miner served is %d",i);
+
+	for(UniqueWords_position = founded.next; UniqueWords_position != NULL; ){
+		UniqueWords_temp = UniqueWords_position;
+		free(UniqueWords_temp->word);
+		if(UniqueWords_position->next != NULL){
+			free(UniqueWords_position);
+		}
+		UniqueWords_position = UniqueWords_temp->next;
+	}
+
+	free(minerInfo_temp);
+	free(UniqueWords_temp);
 	free(founded.word);
 
 	shmdt(buffer);

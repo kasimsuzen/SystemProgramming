@@ -49,6 +49,7 @@ int count;
 char ** foundedWords;
 int foundedWordsSize;
 int foundedWordsIndex;
+struct timeval start, end;
 
 pthread_mutex_t countMutex;
 
@@ -91,16 +92,10 @@ int main(int argc,char ** argv){
 		perror("Could not increment semaphore");
 		exit(5);
 	}
+	i=receiver(atoi(argv[1]));
+	logger(i);
 
-	receiver(atoi(argv[1]));
-	fprintf(stderr,"receiver is finished\n");
-	logger();
-	fprintf(stderr,"logger finished\n");
-
-
-	fprintf(stderr,"There are %d unique word\n",count);
 	fprintf(stderr,"There are %d subdirectories and %d files under %s\n",globalCountOfSubdirectories,globalCountOfFiles,argv[1]);
-
 
 	return(0);
 }
@@ -110,24 +105,25 @@ int main(int argc,char ** argv){
 */
 void usageError(){
 	fprintf(stderr,"Wrong call, should be as:\n");
-	fprintf(stderr,"./miner -numberOfFileToProcess \n");
+	fprintf(stderr,"./miner numberOfFileToProcess \n");
 	exit(-1);
 }
 
 /**
 * This function will crawl through and into directories and their subdirectories
 * @param: name of the root directory which search will begin
+* @return number of file that has been processed
 */
 int receiver(int numberOfFiles){
 	int  i,itemCount=0,sem_id,shmIDIndex,shmIDBuffer,*bufferIndex,j;
 	DIR *dp;
 	FILE *fp;
-	char ** itemList,*buffer;
-	struct timeval start, end;
-	long seconds, useconds;
+	char ** itemList,*buffer,temp[PATH_MAX];
 	key_t sem_key;
 	struct sembuf sop;
 	pthread_t * thread;
+	struct dirent *ep;
+
 	key_t  shmKeyIndex,shmKeyBuffer;
 	sem_key = ftok(".", SEMAPHORE_KEY_CHAR);
 	// Create the semaphore
@@ -197,7 +193,7 @@ int receiver(int numberOfFiles){
 	sop.sem_flg = SEM_UNDO;
 	semop(sem_id, &sop, 1);
 
-	for(i=0; i < numberOfFiles && *bufferIndex != 0; ++i){
+	for(i=0; i < numberOfFiles || *bufferIndex != 0; ++i){
 		if(*bufferIndex > 2) {
 			for (j = *bufferIndex - 2; j >= 0; --j) {
 				if (buffer[j] == '\0') {
@@ -208,47 +204,54 @@ int receiver(int numberOfFiles){
 		}
 		else if(*bufferIndex <= 2 && *bufferIndex >= 0)
 			j = 0;
-
 		strcpy(itemList[i],&buffer[j]);
-		fprintf(stderr,"item list in for %s %d\n",itemList[i],i);
-		memset(&buffer[*bufferIndex - j],'\0',strlen(&buffer[j]));
+		if(j <= 0) {
+			*bufferIndex=j;
+			++i;
+			break;
+		}
 		*bufferIndex = j;
 	}
-
 	itemCount = i;
-	fprintf(stderr,"item count %d buffer %d itemlist %s %d\n",itemCount,*bufferIndex,itemList[0],i);
 
 	for(i=0;i < itemCount; ++i) {
-		fprintf(stderr,"\n");
-
 		dp = opendir(itemList[i]);
 		if (dp != NULL) {
-			strcpy(&buffer[*bufferIndex],itemList[i]);
-			fprintf(stderr,"item %s %d %d\n",itemList[i],itemCount,numberOfFiles);
-			*bufferIndex = *bufferIndex + strlen(itemList[i]);
-			for(j=i;j < itemCount - 1; ++j){
+			/* start from beginning of the directory and search till the end of directory pointer */
+			for (j=0;ep = readdir (dp);++j){
+
+				/* if readed element is directory this function will call itself with this directory */
+				if((ep->d_type == DT_DIR || ep->d_type == DT_REG) && strcmp(".",ep->d_name) != 0 && strcmp("..",ep->d_name) != 0) {
+
+					/*editing directory name for writing back to shared memory*/
+					sprintf(temp,"%s/%s",itemList[i],ep->d_name);
+					strcpy(&buffer[*bufferIndex],temp);
+					*bufferIndex = *bufferIndex + strlen(temp) +1;
+				}
+			}
+			for(j=i;j <= itemCount - 1; ++j){
 				strcpy(itemList[j],itemList[j+1]);
 			}
-			memset(itemList[i],'\0',PATH_MAX);
 			--itemCount;
+		}
+		if(dp == NULL){
 		}
 		closedir(dp);
 	}
-	fprintf(stderr," for after\n");
-
-
 	sop.sem_op = 1;
 	semop(sem_id, &sop, 1);
 	thread = malloc(sizeof(pthread_t) * itemCount);
-	fprintf(stderr,"item count %d\n",itemCount);
 	for(i=0; i < itemCount ; ++i){
-		fprintf(stderr,"item %s %d %d\n",itemList[i],itemCount,numberOfFiles);
 		if((fp = fopen(itemList[i],"r")) != NULL){
 			fclose(fp);
-			fprintf(stderr,"thread\n");
 			pthread_create(&thread[i],NULL,counter,(void*)(itemList[i]));
 		} else{
-			fclose(fp);
+			fprintf(stderr,"fclose error %s %d\n",itemList[i],i);
+			j=fclose(fp);
+			if(j != 0){
+				fprintf(stderr,"fclose error %s %d\n",itemList[i],i);
+				perror("Error fclose");
+			}
 			fprintf(stderr,"%s named file couldnt open sometihng is wrong\n",itemList[i]);
 			perror(" ");
 		}
@@ -256,18 +259,7 @@ int receiver(int numberOfFiles){
 
 	for(i = 0; i < itemCount; ++i) {
 		pthread_join(thread[i], NULL);
-		fprintf(stderr,"join\n");
 	}
-
-	gettimeofday(&end, NULL);
-	seconds  = end.tv_sec  - start.tv_sec;
-	if(seconds > 0){
-		useconds = 1000000 - start.tv_usec + end.tv_usec;
-	}
-
-	if(seconds == 0)
-		useconds = end.tv_usec - start.tv_usec;
-	fprintf(stderr,"Job finished in %ld second and %ld microsecond\n",seconds,useconds);
 
 	if(numberOfFiles > 0){
 		for(i=0; i < numberOfFiles;++i)
@@ -294,7 +286,6 @@ void * counter(void * filePath){
 
 	strcpy(fileName,(char*)filePath);
 	input = fopen(fileName,"r");
-	fprintf(stderr,"filename %s\n",fileName);
 
 	while(!feof(input)){
 		fscanf(input,"%c",&temp);
@@ -325,7 +316,6 @@ void * counter(void * filePath){
 				pthread_mutex_lock(&countMutex);
 
 				if(foundedWordsIndex >= foundedWordsSize){
-					fprintf(stderr,"realloc oldu\n");
 					foundedWordsSize = foundedWordsSize * 2;
 					foundedWords = realloc(foundedWords,sizeof(char*) * foundedWordsSize);
 					for(i =foundedWordsSize / 2; i < foundedWordsSize;++i)
@@ -365,7 +355,7 @@ int isAlpha(char key){
 * This function read from pipe and writes a log file about each words count
 * @param: fileDescriptorWords reading side of pipe
 */
-void logger(){
+void logger(int numberOfFile){
 
 	FILE * logFile;
 	struct UniqueWords founded,*position,*temp;
@@ -373,6 +363,7 @@ void logger(){
 	char *buffer,message[4096],*goldMessage;
 	key_t sem_key,shmKeyIndex,shmKeyBuffer,shmKeyGoldMessage,shmKeyGoldMessageIndex;
 	struct sembuf sop;
+	long int seconds,useconds;
 
 	sem_key = ftok(".", SEMAPHORE_KEY_CHAR);
 	// Create the semaphore
@@ -467,7 +458,6 @@ void logger(){
 
 	sprintf(message,"logFileClient_%d",getpid());
 	logFile = fopen(message,"w+");
-	fprintf(stderr,"Founded index %d %d\n",foundedWordsIndex,foundedWordsSize);
 
 	while(1){
 		pthread_mutex_lock(&countMutex);
@@ -521,19 +511,26 @@ void logger(){
 		free(foundedWords[i]);
 	}
 
-	fprintf(stderr,"before free pointer\n");
-
 	free(foundedWords);
 
-	fprintf(stderr,"free foundedwords  %s\n",founded.word);
 	position = &founded;
+	gettimeofday(&end, NULL);
+
+	seconds  = end.tv_sec  - start.tv_sec;
+	if(seconds > 0){
+		useconds = 1000000 - start.tv_usec + end.tv_usec;
+	}
+
+	if(seconds == 0)
+		useconds = end.tv_usec - start.tv_usec;
+	fprintf(logFile,"Start time of miner from epoch is %ld second  %ld nanosecond\n",start.tv_sec,start.tv_usec);
 
 	sop.sem_num = 0;
 	sop.sem_op = -1;
 	sop.sem_flg = SEM_UNDO;
 	semop(sem_id, &sop, 1);
 
-	sprintf(message,"! %d",getpid());
+	sprintf(message,"! %d %ld %ld",getpid(),seconds,useconds);
 	strcpy(&buffer[*bufferIndex],message);
 	*bufferIndex = *bufferIndex + strlen(message) +1;
 	while(position->next != NULL){
@@ -577,19 +574,15 @@ void logger(){
 			}
 			++i;
 			if (goldMessage[i] == '!')
-				fprintf(stderr, "good %s\n", &goldMessage[i]);
-			sprintf(message, "! %d!", getpid());
-			fprintf(stderr, "%s %s %d\n", message, &goldMessage[i], i);
+			sprintf(message, "! %d", getpid());
 			usleep(500000);
-			if (strcmp(&goldMessage[i], message) == 0) {
+			if (strncmp(&goldMessage[i],message,strlen(message)) == 0) {
 				*goldMessageIndex = i;
 				while (*goldMessageIndex > 0 && i > 0) {
 					for (i = *goldMessageIndex - 2; i >= 0 && goldMessage[i] != '\0'; --i) {
 					}
 					++i;
-					fprintf(stderr,"i value %d ",i);
-					fprintf(logFile, "log %s\n", &goldMessage[i]);
-					fprintf(stderr, "log %s %d %d\n", &goldMessage[i],i,*goldMessageIndex);
+					fprintf(logFile,"%s\n", &goldMessage[i]);
 					*goldMessageIndex = i;
 					if (goldMessage[*goldMessageIndex] == '!' || i == 0) {
 						if(goldMessage[*goldMessageIndex] == '!'){
@@ -599,7 +592,6 @@ void logger(){
 						break;
 					}
 				}
-				fprintf(stderr,"dondu\n");
 			}
 			else{
 				break;
@@ -610,6 +602,9 @@ void logger(){
 		usleep(1000);
 	}
 
+	fprintf(logFile,"End time of miner from epoch is %ld second  %ld nanosecond\n",end.tv_sec,end.tv_usec);
+	fprintf(logFile,"This miner completed it's job at %ld second and %ld microsecond\n",seconds,useconds);
+	fprintf(logFile,"This miner worked on %d file(s)\n",numberOfFile);
 	shmdt(bufferIndex);
 	shmdt(buffer);
 	shmdt(goldMessage);
